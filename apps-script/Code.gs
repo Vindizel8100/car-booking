@@ -75,6 +75,7 @@ function handle(req) {
   if (a === 'adminData') return adminData();
   if (a === 'decide') return withLock(function () { return decide(me, req); });
   if (a === 'addUser') return withLock(function () { return addUser(req); });
+  if (a === 'updateUser') return withLock(function () { return updateUser(me, req); });
   if (a === 'removeUser') return withLock(function () { return removeUser(me, req.name); });
   if (a === 'addCar') return withLock(function () { return addCar(req); });
   if (a === 'updateCar') return withLock(function () { return updateCar(req); });
@@ -86,7 +87,7 @@ function handle(req) {
 
 function login(name, pass) {
   name = normName(name);
-  pass = String(pass || '').replace(/\D/g, '');
+  pass = String(pass || '').replace(/[\s-]/g, '');
   if (!name || !pass) return { ok: false, message: 'יש למלא שם וסיסמה' };
   var cache = CacheService.getScriptCache();
   var key = 'fail_' + Utilities.base64EncodeWebSafe(name);
@@ -195,9 +196,9 @@ function decide(me, q) {
 
 function addUser(q) {
   var name = normName(q.name);
-  var pass = String(q.pass || '').replace(/\D/g, '');
+  var pass = String(q.pass || '').replace(/[\s-]/g, '');
   if (!name) return { ok: false, message: 'יש למלא שם' };
-  if (pass.length < 5) return { ok: false, message: 'יש למלא תעודת זהות' };
+  if (pass.length < 5) return { ok: false, message: 'יש למלא סיסמה (לפחות 5 תווים)' };
   var role = q.role === 'admin' ? 'admin' : 'user';
   var existing = findRow('Users', 'name', name);
   if (existing) {
@@ -206,6 +207,31 @@ function addUser(q) {
   }
   appendRow('Users', { name: name, passHash: hashPass(pass), role: role, createdAt: nowStr() });
   return { ok: true };
+}
+
+function updateUser(me, q) {
+  var old = normName(q.oldName), name = normName(q.name);
+  var r = findRow('Users', 'name', old);
+  if (!r) return { ok: false, message: 'העובד לא נמצא' };
+  if (!name) return { ok: false, message: 'יש למלא שם' };
+  if (name !== old && findRow('Users', 'name', name)) return { ok: false, message: 'כבר קיים עובד בשם הזה' };
+  var role = q.role === 'admin' ? 'admin' : 'user';
+  if (old === me.name && role !== 'admin') return { ok: false, message: 'אי אפשר להוריד לעצמך את הרשאת המנהל' };
+  var pass = String(q.pass || '').replace(/[\s-]/g, '');
+  if (pass && pass.length < 5) return { ok: false, message: 'הסיסמה קצרה מדי (לפחות 5 תווים)' };
+  var patch = { name: name, role: role };
+  if (pass) patch.passHash = hashPass(pass);
+  updateRow('Users', r.row, patch);
+  if (name !== old) {
+    var sh = sheet('Requests'), last = sh.getLastRow();
+    if (last >= 2) {
+      var rng = sh.getRange(2, 2, last - 1, 1);
+      rng.setValues(rng.getValues().map(function (v) { return [String(v[0]) === old ? name : v[0]]; }));
+    }
+  }
+  var out = { ok: true };
+  if (old === me.name) { out.token = makeToken(name, role); out.name = name; }
+  return out;
 }
 
 function removeUser(me, name) {

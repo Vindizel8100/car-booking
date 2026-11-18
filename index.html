@@ -105,7 +105,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
     </div>
     <form id="loginForm" class="card stack" autocomplete="on">
       <label class="f">שם עובד<input class="i" id="lName" name="username" autocomplete="username" required placeholder="שם פרטי ושם משפחה"></label>
-      <label class="f">סיסמה (תעודת זהות)<input class="i" id="lPass" name="password" type="password" inputmode="numeric" autocomplete="current-password" required></label>
+      <label class="f">סיסמה<input class="i" id="lPass" name="password" type="password" autocomplete="current-password" required></label>
       <label class="check"><input type="checkbox" id="lRemember" checked> זכור אותי במכשיר הזה</label>
       <div id="lMsg" class="msg err hidden"></div>
       <button class="btn big" id="lBtn" type="submit">כניסה</button>
@@ -169,11 +169,11 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
       <h2>הוספת עובד</h2>
       <div class="row2">
         <label class="f">שם עובד (כפי שיקליד בכניסה)<input class="i" id="uName" required></label>
-        <label class="f">תעודת זהות (תשמש כסיסמה)<input class="i" id="uPass" inputmode="numeric" required autocomplete="off"></label>
+        <label class="f">סיסמה<input class="i" id="uPass" required autocomplete="off"></label>
       </div>
       <label class="f">הרשאה<select class="i" id="uRole"><option value="user">עובד</option><option value="admin">מנהל / מזכירה</option></select></label>
       <button class="btn" type="submit">שמור עובד</button>
-      <p class="muted" style="margin:0">אם העובד כבר קיים, הסיסמה וההרשאה שלו יתעדכנו. תעודת הזהות לא נשמרת כמו שהיא, אלא רק בצורה מוצפנת.</p>
+      <p class="muted" style="margin:0">אם העובד כבר קיים, הסיסמה וההרשאה שלו יתעדכנו. הסיסמה לא נשמרת כמו שהיא, אלא רק בצורה מוצפנת.</p>
     </form>
     <div class="card"><h2 id="uCount">עובדים</h2><table class="t"><thead><tr><th>שם</th><th>הרשאה</th><th></th></tr></thead><tbody id="uList"></tbody></table></div>
   </div>
@@ -194,7 +194,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 
 <script>
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
-var S = { token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
+var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
 
 function store(k, v) { try { if (v === null) { localStorage.removeItem(k); sessionStorage.removeItem(k); } else (S.remember ? localStorage : sessionStorage).setItem(k, v); } catch (e) {} }
@@ -418,20 +418,47 @@ function renderUsers() {
   var u = S.data.users.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'he'); });
   $('uCount').textContent = 'עובדים (' + u.length + ')';
   $('uList').innerHTML = u.map(function (x) {
-    return '<tr><td>' + esc(x.name) + '</td><td>' + (x.role === 'admin' ? 'מנהל / מזכירה' : 'עובד') + '</td><td style="text-align:left">' +
-      (x.name === S.name ? '<span class="muted">אתה</span>' : '<button class="btn bad sm" type="button" data-del="' + esc(x.name) + '">מחק</button>') + '</td></tr>';
+    var n = esc(x.name);
+    if (S.editUser === x.name) {
+      return '<tr data-name="' + n + '"><td colspan="3" style="background:var(--accent-l)"><div class="stack" style="gap:10px;padding:6px 0">' +
+        '<b>עריכת עובד</b>' +
+        '<label class="f">שם עובד<input class="i" data-en value="' + n + '"></label>' +
+        '<label class="f">סיסמה חדשה – להשאיר ריק אם לא משנים<input class="i" data-ep autocomplete="off"></label>' +
+        '<label class="f">הרשאה<select class="i" data-er><option value="user"' + (x.role !== 'admin' ? ' selected' : '') + '>עובד</option><option value="admin"' + (x.role === 'admin' ? ' selected' : '') + '>מנהל / מזכירה</option></select></label>' +
+        '<div style="display:flex;gap:8px"><button class="btn ok sm" type="button" data-save-user>שמור שינויים</button><button class="btn ghost sm" type="button" data-cancel-edit>ביטול</button></div>' +
+        '</div></td></tr>';
+    }
+    return '<tr data-name="' + n + '"><td>' + n + '</td><td>' + (x.role === 'admin' ? 'מנהל / מזכירה' : 'עובד') + '</td><td style="text-align:left;white-space:nowrap">' +
+      '<button class="btn ghost sm" type="button" data-edit>ערוך</button> ' +
+      (x.name === S.name ? '<span class="muted">אתה</span>' : '<button class="btn bad sm" type="button" data-del="' + n + '">מחק</button>') + '</td></tr>';
   }).join('');
 }
 $('uList').addEventListener('click', function (e) {
-  var n = e.target.getAttribute('data-del'); if (!n) return;
-  if (e.target.getAttribute('data-sure') !== '1') { e.target.setAttribute('data-sure', '1'); e.target.textContent = 'למחוק? לחץ שוב'; return; }
-  e.target.disabled = true;
+  var t = e.target, tr = t.closest('tr'); if (!tr) return;
+  var name = tr.getAttribute('data-name');
+  if (t.hasAttribute('data-edit')) { S.editUser = name; renderUsers(); var f = $('uList').querySelector('[data-en]'); if (f) f.focus(); return; }
+  if (t.hasAttribute('data-cancel-edit')) { S.editUser = null; renderUsers(); return; }
+  if (t.hasAttribute('data-save-user')) {
+    t.disabled = true;
+    api('updateUser', { oldName: name, name: tr.querySelector('[data-en]').value, role: tr.querySelector('[data-er]').value, pass: tr.querySelector('[data-ep]').value }).then(function (r) {
+      t.disabled = false;
+      if (!r.ok) { msg($('aMsg'), r.message); return; }
+      if (r.token) { S.token = r.token; S.name = r.name; store('cb_token', r.token); store('cb_name', r.name); $('hello').textContent = 'שלום, ' + S.name; }
+      S.editUser = null;
+      msg($('aMsg'), 'פרטי העובד עודכנו', true);
+      loadAdmin();
+    });
+    return;
+  }
+  var n = t.getAttribute('data-del'); if (!n) return;
+  if (t.getAttribute('data-sure') !== '1') { t.setAttribute('data-sure', '1'); t.textContent = 'למחוק? לחץ שוב'; return; }
+  t.disabled = true;
   api('removeUser', { name: n }).then(function (r) { msg($('aMsg'), r.ok ? 'העובד נמחק' : r.message, r.ok); loadAdmin(); });
 });
 $('uForm').addEventListener('submit', function (e) {
   e.preventDefault();
   api('addUser', { name: $('uName').value, pass: $('uPass').value, role: $('uRole').value }).then(function (r) {
-    msg($('aMsg'), r.ok ? (r.updated ? 'פרטי העובד עודכנו' : 'העובד נוסף. הוא יכול להיכנס עם השם ותעודת הזהות') : r.message, r.ok);
+    msg($('aMsg'), r.ok ? (r.updated ? 'פרטי העובד עודכנו' : 'העובד נוסף. הוא יכול להיכנס עם השם והסיסמה') : r.message, r.ok);
     if (r.ok) { $('uName').value = ''; $('uPass').value = ''; $('uRole').value = 'user'; }
     loadAdmin();
   });
