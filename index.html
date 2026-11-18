@@ -225,7 +225,7 @@ function api(action, body) {
 /* מקבלים נתונים רק אם הם חדשים יותר ממה שכבר מוצג */
 function fresh(r) { if (!r._seq || r._seq < appliedSeq) return false; appliedSeq = r._seq; return true; }
 function applyAdmin(r) { if (r && r.data && fresh(r)) { S.data = r.data; renderAdmin(); } }
-function applyMine(r) { if (r && r.mine && fresh(r)) { S.mine = r.mine; renderMine(); } }
+function applyMine(r) { if (r && r.mine) { if (fresh(r)) { S.mine = r.mine; renderMine(); } } else loadMine(); }
 
 function msg(el, text, good) {
   if (!text) { show(el, false); return; }
