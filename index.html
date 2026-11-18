@@ -196,6 +196,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
+var APP_VERSION = '2026-11-18-5';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -567,6 +568,19 @@ $('cForm').addEventListener('submit', function (e) {
 
 /* רענון אוטומטי למזכירה כל דקה */
 setInterval(function () { if (S.token && S.role === 'admin' && !document.hidden && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement||{}).tagName||'') && S.view !== 'users' && S.view !== 'cars') loadAdmin(); }, 60000);
+
+/* ---- עדכון אוטומטי לגרסה חדשה של האתר ----
+   הדפדפן שומר עותק של האתר עד 10 דקות. כאן בודקים אם יש גרסה חדשה וטוענים אותה. */
+function checkVersion() {
+  if (Object.keys(carDraft).length || S.editUser || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
+  fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (t) {
+    var m = t.match(/APP_VERSION = '([^']+)'/);
+    if (m && m[1] !== APP_VERSION) location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]));
+  }).catch(function () {});
+}
+setTimeout(checkVersion, 1500);
+setInterval(checkVersion, 5 * 60000);
+document.addEventListener('visibilitychange', function () { if (!document.hidden) checkVersion(); });
 
 /* ---- הפעלה ---- */
 (function () {
