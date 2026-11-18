@@ -72,6 +72,7 @@ function handle(req) {
   var res;
   if (a === 'createRequest') res = withLock(function () { return createRequest(me, req); });
   else if (a === 'cancelRequest') res = withLock(function () { return cancelRequest(me, req.id); });
+  else if (a === 'cancelDays') res = withLock(function () { return cancelDays(me, req.id, req.days); });
   if (res) {
     // מחזירים את הרשימה המעודכנת באותה תשובה, כדי לחסוך פנייה נוספת לשרת
     if (res.ok) res.mine = { requests: myRequests(me.name), cars: activeCars() };
@@ -176,6 +177,61 @@ function cancelRequest(me, id) {
   // שומרים את הרכב שהיה משובץ, כדי שהמזכירה תראה איזה רכב התפנה
   updateRow('Requests', r.row, { status: 'cancelled', adminNote: r.data.status === 'approved' ? 'בוטל אחרי אישור' : r.data.adminNote, decidedAt: nowStr(), decidedBy: me.name });
   return { ok: true };
+}
+
+/* ביטול ימים מסוימים מתוך בקשה של כמה ימים. הימים שנשארו ממשיכים עם אותו סטטוס ואותו רכב */
+function cancelDays(me, id, days) {
+  var r = findRow('Requests', 'id', id);
+  if (!r || (r.data.userName !== me.name && me.role !== 'admin')) return { ok: false, message: 'הבקשה לא נמצאה' };
+  var q = r.data;
+  if (q.status !== 'pending' && q.status !== 'approved') return { ok: false, message: 'אי אפשר לבטל את הבקשה הזאת' };
+  var all = dateList(q.fromDate, q.toDate);
+  var today = Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd');
+  var drop = {};
+  (days || []).forEach(function (d) { if (all.indexOf(d) >= 0) drop[d] = 1; });
+  var dropped = all.filter(function (d) { return drop[d]; });
+  if (!dropped.length) return { ok: false, message: 'יש לבחור לפחות יום אחד' };
+  if (me.role !== 'admin' && dropped.some(function (d) { return d < today; })) return { ok: false, message: 'אי אפשר לבטל יום שכבר עבר' };
+  var keep = all.filter(function (d) { return !drop[d]; });
+  if (!keep.length) return cancelRequest(me, id);
+
+  var keepRuns = runs(keep), dropRuns = runs(dropped);
+  updateRow('Requests', r.row, { fromDate: keepRuns[0][0], toDate: keepRuns[0][1] });
+  for (var i = 1; i < keepRuns.length; i++) {
+    var copy = JSON.parse(JSON.stringify(q));
+    copy.id = newId(); copy.fromDate = keepRuns[i][0]; copy.toDate = keepRuns[i][1];
+    appendRow('Requests', copy);
+  }
+  dropRuns.forEach(function (run) {
+    var c = JSON.parse(JSON.stringify(q));
+    c.id = newId(); c.fromDate = run[0]; c.toDate = run[1];
+    c.status = 'cancelled'; c.carId = q.status === 'approved' ? q.carId : '';
+    c.adminNote = 'בוטל חלקית'; c.decidedAt = nowStr(); c.decidedBy = me.name;
+    appendRow('Requests', c);
+  });
+  return { ok: true };
+}
+
+function newId() { return 'r' + Date.now().toString(36) + Math.floor(Math.random() * 100000).toString(36); }
+
+function pad2(n) { return ('0' + n).slice(-2); }
+function dateList(from, to) {
+  var p = from.split('-'), d = new Date(+p[0], p[1] - 1, +p[2]), out = [];
+  for (var i = 0; i < 400; i++) {
+    var s = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    if (s > to) break;
+    out.push(s); d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+/* הופך רשימת תאריכים לרצפים: [[מ, עד], ...] */
+function runs(list) {
+  var out = [];
+  list.forEach(function (d) {
+    var last = out[out.length - 1];
+    if (last && dateList(last[1], d).length === 2) last[1] = d; else out.push([d, d]);
+  });
+  return out;
 }
 
 function adminData() {
