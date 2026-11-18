@@ -152,6 +152,25 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
   <div id="aMsg" class="msg hidden" style="margin-bottom:14px"></div>
   <div id="aReq" class="stack">
     <div class="stats" id="stats"></div>
+    <div class="card stack" style="gap:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">הוספת נסיעה ידנית</h2><button class="btn sm" type="button" id="mToggle">+ נסיעה חדשה לעובד</button></div>
+      <form id="mForm" class="stack hidden">
+        <label class="f">עובד<select class="i" id="mUser" required></select></label>
+        <div class="row2">
+          <label class="f">מתאריך<input class="i" type="date" id="mFrom" required></label>
+          <label class="f">עד תאריך<input class="i" type="date" id="mTo" required></label>
+        </div>
+        <div class="row2">
+          <label class="f">שעת יציאה<input class="i" type="time" id="mTime" value="07:30"></label>
+          <label class="f">רכב<select class="i" id="mCar"></select></label>
+        </div>
+        <label class="f">לאן הנסיעה?<input class="i" id="mDest" required maxlength="120"></label>
+        <label class="f">מספר פרויקט<input class="i" id="mProj" maxlength="40"></label>
+        <label class="f">הערות (לא חובה)<input class="i" id="mNotes" maxlength="300"></label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ok" type="submit" id="mBtn">שמור נסיעה</button><button class="btn ghost" type="button" id="mCancel">ביטול</button></div>
+        <p class="muted" style="margin:0">עם רכב – הנסיעה נשמרת כמאושרת. בלי רכב – היא נשמרת כבקשה ממתינה.</p>
+      </form>
+    </div>
     <div class="card"><h2>בקשות ממתינות</h2><div id="pendList"></div></div>
     <div class="card hidden" id="cancCard"><h2>ביטולים של נסיעות מאושרות</h2><p class="muted" style="margin:0 0 6px">הרכבים האלה התפנו כי העובד ביטל את הנסיעה</p><div id="cancList"></div></div>
     <div class="card"><div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">שיבוצים קרובים</h2><button class="btn ok sm" type="button" id="aSaveAll" disabled>שמור הכל</button></div><div id="assignErr" class="msg err hidden" style="margin-bottom:8px"></div><div id="apprList"></div></div>
@@ -197,7 +216,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-18-9';
+var APP_VERSION = '2026-11-18-10';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -484,6 +503,48 @@ $('aSaveAll').addEventListener('click', function () {
     if (r.data) applyAdmin(r); else loadAdmin();
   });
 });
+/* ---- הוספת נסיעה ידנית ---- */
+function fillManual() {
+  var keepU = $('mUser').value;
+  var users = S.data.users.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'he'); });
+  $('mUser').innerHTML = '<option value=""></option>' + users.map(function (u) { return '<option' + (u.name === keepU ? ' selected' : '') + '>' + esc(u.name) + '</option>'; }).join('');
+  fillManualCars();
+}
+function fillManualCars() {
+  var from = $('mFrom').value, to = $('mTo').value || from, keep = $('mCar').value;
+  var q = { id: '', fromDate: from, toDate: to };
+  var free = from ? freeCars(q) : carsActive();
+  $('mCar').innerHTML = '<option value="">בלי רכב (ממתין)</option>' + free.map(function (c) { return '<option value="' + c.id + '"' + (c.id === keep ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') +
+    (from && !free.length ? '<option disabled>אין רכב פנוי בתאריכים האלה</option>' : '');
+}
+$('mToggle').addEventListener('click', function () {
+  var open = $('mForm').classList.contains('hidden');
+  show($('mForm'), open);
+  if (open) {
+    var t = new Date(); t.setDate(t.getDate() + 1);
+    if (!$('mFrom').value) { $('mFrom').value = iso(t); $('mTo').value = iso(t); }
+    fillManual();
+  }
+});
+$('mCancel').addEventListener('click', function () { show($('mForm'), false); });
+$('mFrom').addEventListener('change', function () { if (!$('mTo').value || $('mTo').value < this.value) $('mTo').value = this.value; $('mTo').min = this.value; fillManualCars(); });
+$('mTo').addEventListener('change', fillManualCars);
+$('mForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var body = { userName: $('mUser').value, fromDate: $('mFrom').value, toDate: $('mTo').value, departTime: $('mTime').value,
+    carId: $('mCar').value, destination: $('mDest').value, project: $('mProj').value, notes: $('mNotes').value };
+  if (!body.userName) return msg($('aMsg'), 'יש לבחור עובד');
+  var b = $('mBtn'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+  api('adminCreate', body).then(function (r) {
+    b.disabled = false; b.textContent = 'שמור נסיעה';
+    if (!r.ok) { msg($('aMsg'), r.message); window.scrollTo(0, 0); return; }
+    msg($('aMsg'), body.carId ? 'הנסיעה נוספה כמאושרת. ' + body.userName + ' יראה אותה ב"הבקשות שלי"' : 'הנסיעה נוספה כבקשה ממתינה', true);
+    ['mDest', 'mProj', 'mNotes', 'mFrom', 'mTo'].forEach(function (id) { $(id).value = ''; });
+    $('mUser').value = ''; show($('mForm'), false);
+    if (r.data) applyAdmin(r); else loadAdmin();
+    window.scrollTo(0, 0);
+  });
+});
 function renderAdmin() {
   var d = S.data, today = iso(new Date()), tom = new Date(); tom.setDate(tom.getDate() + 1); tom = iso(tom);
   var pend = d.requests.filter(function (r) { return r.status === 'pending'; }).sort(function (a, b) { return a.fromDate < b.fromDate ? -1 : 1; });
@@ -517,6 +578,7 @@ function renderAdmin() {
   }).join('');
   renderAssign();
   renderBoard(); renderUsers(); renderCars();
+  if (!$('mForm').classList.contains('hidden')) fillManual();
 }
 
 function onRowAction(e) {
@@ -693,7 +755,7 @@ setInterval(function () { if (S.token && S.role === 'admin' && !document.hidden 
 /* ---- עדכון אוטומטי לגרסה חדשה של האתר ----
    הדפדפן שומר עותק של האתר עד 10 דקות. כאן בודקים אם יש גרסה חדשה וטוענים אותה. */
 function checkVersion() {
-  if (Object.keys(carDraft).length || Object.keys(assignDraft).length || S.editUser || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
+  if (Object.keys(carDraft).length || Object.keys(assignDraft).length || S.editUser || !$('mForm').classList.contains('hidden') || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
   fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (t) {
     var m = t.match(/APP_VERSION = '([^']+)'/);
     if (m && m[1] !== APP_VERSION) location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]));
