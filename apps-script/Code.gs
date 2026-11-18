@@ -88,7 +88,8 @@ function handle(req) {
     removeUser: function () { return removeUser(me, req.name); },
     addCar: function () { return addCar(req); },
     updateCar: function () { return updateCar(req); },
-    removeCar: function () { return removeCar(req.id); }
+    removeCar: function () { return removeCar(req.id); },
+    assignCars: function () { return assignCars(me, req.changes); }
   };
   if (!fns[a]) return { ok: false, message: 'פעולה לא מוכרת' };
   res = withLock(fns[a]);
@@ -232,6 +233,32 @@ function runs(list) {
     if (last && dateList(last[1], d).length === 2) last[1] = d; else out.push([d, d]);
   });
   return out;
+}
+
+/* שמירה של כמה שינויי רכב בבת אחת. נשמר רק אם אין רכב שמשובץ לשני אנשים באותו יום */
+function assignCars(me, changes) {
+  changes = changes || [];
+  if (!changes.length) return { ok: false, message: 'אין שינויים לשמור' };
+  var all = readRows('Requests'), byId = {};
+  all.forEach(function (x) { byId[x.id] = x; });
+  var cars = {}; readRows('Cars').forEach(function (c) { if (c.active === 'yes') cars[c.id] = c; });
+  for (var i = 0; i < changes.length; i++) {
+    var ch = changes[i], x = byId[ch.id];
+    if (!x || x.status !== 'approved') return { ok: false, message: 'אחת הנסיעות כבר לא מאושרת. רענן את הדף' };
+    if (!cars[ch.carId]) return { ok: false, message: 'יש לבחור רכב לנסיעה של ' + x.userName };
+    x.carId = ch.carId;
+  }
+  var appr = all.filter(function (x) { return x.status === 'approved'; });
+  for (var a = 0; a < appr.length; a++) for (var b = a + 1; b < appr.length; b++) {
+    var p = appr[a], q = appr[b];
+    if (p.carId === q.carId && p.fromDate <= q.toDate && p.toDate >= q.fromDate)
+      return { ok: false, message: cars[p.carId].name + ' משובץ גם ל' + p.userName + ' וגם ל' + q.userName + ' באותם ימים. תקן ונסה שוב' };
+  }
+  changes.forEach(function (ch) {
+    var r = findRow('Requests', 'id', ch.id);
+    updateRow('Requests', r.row, { carId: ch.carId, decidedAt: nowStr(), decidedBy: me.name });
+  });
+  return { ok: true };
 }
 
 /* החלפת רכב לנסיעה מאושרת. אם הרכב החדש תפוס באותם ימים, הנהג השני מקבל את הרכב הקודם */
