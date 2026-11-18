@@ -77,6 +77,7 @@ h2{margin:0 0 6px;font-size:19px;font-weight:800}
 .gc{min-height:48px;border-radius:8px;font-size:13px;display:flex;align-items:center;justify-content:center;text-align:center;padding:4px;line-height:1.25}
 .gc.free{background:var(--bg);border:1px solid var(--line);color:var(--muted)}
 .gc.busy{background:var(--busy);color:var(--accent-d);font-weight:700}
+.gcar{display:block;font-size:11px;font-weight:500;color:var(--accent-d);opacity:.85;margin-top:2px}
 .gc.wait{background:var(--warn-bg);color:var(--warn);border:1px dashed #B07A10}
 .gname{font-weight:700;font-size:14px;display:flex;align-items:center;padding:0 4px}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
@@ -439,7 +440,7 @@ function renderBoard() {
     h += '<div class="gname">' + esc(c.name) + '</div>';
     days.forEach(function (d) {
       var a = reqs.filter(function (r) { return r.status === 'approved' && r.carId === c.id && r.fromDate <= d && r.toDate >= d; })[0];
-      h += a ? '<div class="gc busy" title="' + esc(a.destination) + '">' + esc(a.userName) + '</div>' : '<div class="gc free">פנוי</div>';
+      h += a ? '<div class="gc busy" title="' + esc(a.destination) + '"><span>' + esc(a.userName) + '<small class="gcar">' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</small></span></div>' : '<div class="gc free">פנוי</div>';
     });
   });
   var waiting = days.map(function (d) { return reqs.filter(function (r) { return r.status === 'pending' && r.fromDate <= d && r.toDate >= d; }); });
