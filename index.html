@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1F5FBF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="רכבי מחלקה">
+<title>שריון רכבי מחלקה</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%231F5FBF'/%3E%3Cpath d='M5 16h14v-4l-2-4.5H7L5 12v4z' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--accent:#1F5FBF;--accent-d:#174A94;--accent-l:#EAF0FA;--ink:#16202A;--muted:#4A5663;--line:#E2E7EC;--field:#C5CDD6;--bg:#F4F6F9;
+--warn-bg:#FFF4DC;--warn:#6B4600;--ok-bg:#E3F4EA;--ok:#0F5A37;--ok-btn:#0F7A48;--bad-bg:#FBE6E7;--bad:#8F1F24;--busy:#DCE7F8}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,system-ui,sans-serif;font-size:16px}
+button,input,select,textarea{font:inherit;color:inherit}
+.hidden{display:none!important}
+.wrap{max-width:560px;margin:0 auto;padding:16px 16px 40px}
+.wrap.wide{max-width:1200px}
+header.top{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header.top .in{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo{width:40px;height:40px;border-radius:11px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.title{display:flex;flex-direction:column;flex:1;min-width:0}
+.title small{color:var(--muted);font-size:14px}
+.title b{font-size:20px;font-weight:800}
+.card{background:#fff;border-radius:16px;padding:18px;box-shadow:0 1px 3px rgba(22,32,42,.08)}
+.stack{display:flex;flex-direction:column;gap:14px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label.f{display:flex;flex-direction:column;gap:6px;font-weight:500;font-size:15px}
+input.i,select.i,textarea.i{min-height:50px;border:1px solid var(--field);border-radius:12px;padding:10px 12px;background:#fff;font-size:16px;width:100%}
+textarea.i{resize:vertical;min-height:80px}
+input.i:focus,select.i:focus,textarea.i:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.btn{min-height:48px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-weight:700;font-size:16px;padding:0 18px;cursor:pointer}
+.btn:hover{background:var(--accent-d)}
+.btn:disabled{opacity:.6;cursor:default}
+.btn.big{min-height:54px;width:100%;font-size:17px}
+.btn.ghost{background:#fff;color:var(--muted);border:1px solid var(--field)}
+.btn.ghost:hover{background:var(--bg)}
+.btn.ok{background:var(--ok-btn)}.btn.ok:hover{background:var(--ok)}
+.btn.bad{background:#fff;color:var(--bad);border:1px solid var(--field)}
+.btn.sm{min-height:44px;font-size:15px;padding:0 14px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{min-height:44px;padding:0 14px;border-radius:10px;border:none;background:transparent;color:var(--muted);font-weight:500;cursor:pointer}
+.tab.on{background:var(--accent-l);color:var(--accent-d);font-weight:700}
+.pill{font-size:13px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.p-pending{background:var(--warn-bg);color:var(--warn)}
+.p-approved{background:var(--ok-bg);color:var(--ok)}
+.p-rejected{background:var(--bad-bg);color:var(--bad)}
+.p-cancelled{background:#EEF1F4;color:var(--muted)}
+.muted{color:var(--muted);font-size:14px}
+.note{display:flex;gap:10px;background:var(--warn-bg);color:var(--warn);border-radius:12px;padding:12px 14px;font-size:14px}
+.msg{border-radius:12px;padding:12px 14px;font-size:15px}
+.msg.err{background:var(--bad-bg);color:var(--bad)}
+.msg.good{background:var(--ok-bg);color:var(--ok)}
+.req{display:flex;flex-direction:column;gap:8px}
+.req .h{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.req .h b{font-size:17px}
+.carbox{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:10px 12px}
+.list{display:flex;flex-direction:column;gap:12px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.stat{background:#fff;border-radius:14px;padding:16px 18px}
+.stat b{display:block;font-size:30px;font-weight:800}
+.arow{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
+.arow:first-of-type{border-top:none}
+.arow .c{display:flex;flex-direction:column;flex:1 1 160px;min-width:0}
+.arow .c.w{flex:2 1 220px}
+.arow .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.arow select.i{min-height:44px;min-width:170px}
+.arow input.i{min-height:44px}
+h2{margin:0 0 6px;font-size:19px;font-weight:800}
+.board{overflow-x:auto}
+.grid{display:grid;grid-template-columns:120px repeat(5,minmax(110px,1fr));gap:6px;min-width:720px}
+.gh{font-weight:700;font-size:14px;padding:6px;text-align:center}
+.gc{min-height:48px;border-radius:8px;font-size:13px;display:flex;align-items:center;justify-content:center;text-align:center;padding:4px;line-height:1.25}
+.gc.free{background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+.gc.busy{background:var(--busy);color:var(--accent-d);font-weight:700}
+.gc.wait{background:var(--warn-bg);color:var(--warn);border:1px dashed #B07A10}
+.gname{font-weight:700;font-size:14px;display:flex;align-items:center;padding:0 4px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:4px;display:inline-block}
+table.t{width:100%;border-collapse:collapse}
+table.t td,table.t th{padding:10px 8px;border-top:1px solid var(--line);text-align:right;font-size:15px}
+table.t th{color:var(--muted);font-weight:500;border-top:none}
+.spin{display:inline-block;width:18px;height:18px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .7s linear infinite;vertical-align:-3px}
+@keyframes s{to{transform:rotate(360deg)}}
+.center{display:flex;justify-content:center;padding:30px;color:var(--muted)}
+.check{display:flex;align-items:center;gap:10px;min-height:44px;font-size:15px;color:var(--muted)}
+.check input{width:20px;height:20px}
+@media (max-width:420px){.row2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- כניסה -->
+<section id="vLogin" class="wrap hidden" style="padding-top:56px">
+  <div class="stack" style="gap:28px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center">
+      <div class="logo" style="width:72px;height:72px;border-radius:20px"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17h14v-4.5l-2-5H7l-2 5V17z"/><path d="M5 12.5h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg></div>
+      <h1 style="margin:0;font-size:28px;font-weight:800">שריון רכבי מחלקה</h1>
+      <p class="muted" style="margin:0;font-size:16px">היכנס כדי לבקש רכב לעבודת שטח</p>
+    </div>
+    <form id="loginForm" class="card stack" autocomplete="on">
+      <label class="f">שם עובד<input class="i" id="lName" name="username" autocomplete="username" required placeholder="שם פרטי ושם משפחה"></label>
+      <label class="f">סיסמה (תעודת זהות)<input class="i" id="lPass" name="password" type="password" inputmode="numeric" autocomplete="current-password" required></label>
+      <label class="check"><input type="checkbox" id="lRemember" checked> זכור אותי במכשיר הזה</label>
+      <div id="lMsg" class="msg err hidden"></div>
+      <button class="btn big" id="lBtn" type="submit">כניסה</button>
+    </form>
+    <p class="muted" style="text-align:center;margin:0">שכחת את פרטי הכניסה? פנה למזכירת המחלקה</p>
+  </div>
+</section>
+
+<!-- כותרת לאחר כניסה -->
+<header id="topBar" class="top hidden">
+  <div class="in">
+    <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17h14v-4.5l-2-5H7l-2 5V17z"/><path d="M5 12.5h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg></div>
+    <div class="title"><small id="hello"></small><b id="pageTitle"></b></div>
+    <nav class="tabs" id="tabs" aria-label="ניווט"></nav>
+    <button class="btn ghost sm" id="logoutBtn" type="button">יציאה</button>
+  </div>
+</header>
+
+<!-- עובד: בקשה חדשה -->
+<section id="vNew" class="wrap hidden">
+  <form id="newForm" class="stack">
+    <div class="row2">
+      <label class="f">מתאריך<input class="i" type="date" id="nFrom" required></label>
+      <label class="f">עד תאריך<input class="i" type="date" id="nTo" required></label>
+    </div>
+    <label class="f">שעת יציאה<input class="i" type="time" id="nTime" value="07:30"></label>
+    <label class="f">לאן הנסיעה?<input class="i" id="nDest" required maxlength="120" placeholder="יעד / אתר עבודה"></label>
+    <label class="f">מספר פרויקט<input class="i" id="nProj" maxlength="40" inputmode="numeric"></label>
+    <label class="f">הערות (לא חובה)<textarea class="i" id="nNotes" maxlength="300" placeholder="למשל: צריך רכב עם וו גרירה"></textarea></label>
+    <div class="note"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/></svg><span>הבקשה תישלח למזכירה לאישור. הסטטוס יתעדכן ב"הבקשות שלי".</span></div>
+    <div id="nMsg" class="msg hidden"></div>
+    <button class="btn big" id="nBtn" type="submit">שלח בקשה</button>
+  </form>
+</section>
+
+<!-- עובד: הבקשות שלי -->
+<section id="vMine" class="wrap hidden"><div id="mineList" class="list"></div></section>
+
+<!-- מנהל -->
+<section id="vAdmin" class="wrap wide hidden">
+  <div id="aMsg" class="msg hidden" style="margin-bottom:14px"></div>
+  <div id="aReq" class="stack">
+    <div class="stats" id="stats"></div>
+    <div class="card"><h2>בקשות ממתינות</h2><div id="pendList"></div></div>
+    <div class="card"><h2>שיבוצים קרובים</h2><div id="apprList"></div></div>
+  </div>
+  <div id="aBoard" class="card stack hidden">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
+      <h2 id="weekTitle" style="margin:0"></h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost sm" type="button" id="wNext">שבוע הבא ←</button>
+        <button class="btn ghost sm" type="button" id="wNow">השבוע</button>
+        <button class="btn ghost sm" type="button" id="wPrev">→ שבוע קודם</button>
+      </div>
+    </div>
+    <div class="legend"><span><i class="sw" style="background:var(--busy)"></i>משובץ</span><span><i class="sw" style="background:var(--warn-bg);border:1px dashed #B07A10"></i>בקשה ממתינה</span><span><i class="sw" style="background:var(--bg);border:1px solid var(--line)"></i>פנוי</span></div>
+    <div class="board"><div class="grid" id="grid"></div></div>
+  </div>
+  <div id="aUsers" class="stack hidden">
+    <form class="card stack" id="uForm">
+      <h2>הוספת עובד</h2>
+      <div class="row2">
+        <label class="f">שם עובד (כפי שיקליד בכניסה)<input class="i" id="uName" required></label>
+        <label class="f">תעודת זהות (תשמש כסיסמה)<input class="i" id="uPass" inputmode="numeric" required autocomplete="off"></label>
+      </div>
+      <label class="f">הרשאה<select class="i" id="uRole"><option value="user">עובד</option><option value="admin">מנהל / מזכירה</option></select></label>
+      <button class="btn" type="submit">שמור עובד</button>
+      <p class="muted" style="margin:0">אם העובד כבר קיים, הסיסמה וההרשאה שלו יתעדכנו. תעודת הזהות לא נשמרת כמו שהיא, אלא רק בצורה מוצפנת.</p>
+    </form>
+    <div class="card"><h2 id="uCount">עובדים</h2><table class="t"><thead><tr><th>שם</th><th>הרשאה</th><th></th></tr></thead><tbody id="uList"></tbody></table></div>
+  </div>
+  <div id="aCars" class="stack hidden">
+    <form class="card stack" id="cForm">
+      <h2>הוספת רכב</h2>
+      <div class="row2">
+        <label class="f">שם הרכב<input class="i" id="cName" required placeholder="למשל: רכב 6 – סקודה"></label>
+        <label class="f">מספר רישוי<input class="i" id="cPlate"></label>
+      </div>
+      <button class="btn" type="submit">הוסף רכב</button>
+    </form>
+    <div class="card"><h2>רכבי המחלקה</h2><table class="t"><thead><tr><th>שם</th><th>מספר רישוי</th><th></th></tr></thead><tbody id="cList"></tbody></table></div>
+  </div>
+</section>
+
+<div id="loading" class="center"><span class="spin"></span></div>
+
+<script>
+var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
+var S = { token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
+var $ = function (id) { return document.getElementById(id); };
+
+function store(k, v) { try { if (v === null) { localStorage.removeItem(k); sessionStorage.removeItem(k); } else (S.remember ? localStorage : sessionStorage).setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k) || sessionStorage.getItem(k); } catch (e) { return null; } }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function show(el, on) { el.classList.toggle('hidden', !on); }
+
+function api(action, body) {
+  body = body || {};
+  body.action = action;
+  if (S.token) body.token = S.token;
+  return fetch(API, { method: 'POST', body: JSON.stringify(body) })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (!res.ok && res.error === 'AUTH') { logout(); throw new Error(res.message); }
+      return res;
+    })
+    .catch(function (e) { if (e && e.message && /יש להתחבר/.test(e.message)) throw e; return { ok: false, message: 'אין חיבור לשרת. בדוק את האינטרנט ונסה שוב' }; });
+}
+
+function msg(el, text, good) {
+  if (!text) { show(el, false); return; }
+  el.textContent = text; el.className = 'msg ' + (good ? 'good' : 'err'); show(el, true);
+}
+
+/* ---- תאריכים ---- */
+function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function parse(s) { var p = s.split('-'); return new Date(+p[0], p[1] - 1, +p[2]); }
+function dm(s) { if (!s) return ''; var p = s.split('-'); return +p[2] + '.' + +p[1]; }
+function range(a, b) { return a === b || !b ? dm(a) : dm(a) + '–' + dm(b); }
+var DAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+function dayName(s) { return 'יום ' + DAYS[parse(s).getDay()]; }
+var ST = { pending: 'ממתין לאישור', approved: 'אושר', rejected: 'נדחה', cancelled: 'בוטל' };
+
+/* ---- כניסה ---- */
+$('loginForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var b = $('lBtn'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+  msg($('lMsg'), '');
+  S.remember = $('lRemember').checked;
+  api('login', { name: $('lName').value, pass: $('lPass').value }).then(function (r) {
+    b.disabled = false; b.textContent = 'כניסה';
+    if (!r.ok) return msg($('lMsg'), r.message);
+    S.token = r.token; S.name = r.name; S.role = r.role;
+    store('cb_token', r.token); store('cb_name', r.name); store('cb_role', r.role);
+    $('lPass').value = '';
+    start();
+  });
+});
+
+function logout() {
+  S.token = null; store('cb_token', null); store('cb_name', null); store('cb_role', null);
+  ['topBar', 'vNew', 'vMine', 'vAdmin', 'loading'].forEach(function (id) { show($(id), false); });
+  show($('vLogin'), true);
+}
+$('logoutBtn').addEventListener('click', logout);
+
+function start() {
+  show($('vLogin'), false); show($('topBar'), true); show($('loading'), false);
+  $('hello').textContent = 'שלום, ' + S.name;
+  var tabs = S.role === 'admin'
+    ? [['req', 'בקשות'], ['board', 'לוח רכבים'], ['users', 'עובדים'], ['cars', 'רכבים']]
+    : [['new', 'בקשה חדשה'], ['mine', 'הבקשות שלי']];
+  $('tabs').innerHTML = tabs.map(function (t) { return '<button type="button" class="tab" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
+  go(S.role === 'admin' ? 'req' : 'new');
+}
+$('tabs').addEventListener('click', function (e) { var v = e.target.getAttribute('data-v'); if (v) go(v); });
+
+var TITLES = { new: 'בקשת רכב חדשה', mine: 'הבקשות שלי', req: 'ניהול בקשות', board: 'לוח רכבים', users: 'עובדים', cars: 'רכבים' };
+function go(v) {
+  S.view = v;
+  $('pageTitle').textContent = TITLES[v];
+  Array.prototype.forEach.call($('tabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-v') === v); });
+  show($('vNew'), v === 'new'); show($('vMine'), v === 'mine');
+  show($('vAdmin'), S.role === 'admin');
+  show($('aReq'), v === 'req'); show($('aBoard'), v === 'board'); show($('aUsers'), v === 'users'); show($('aCars'), v === 'cars');
+  if (v === 'new') initNew();
+  if (v === 'mine') loadMine();
+  if (S.role === 'admin') { msg($('aMsg'), ''); loadAdmin(); }
+  window.scrollTo(0, 0);
+}
+
+/* ---- עובד ---- */
+function initNew() {
+  var t = new Date(); t.setDate(t.getDate() + 1);
+  if (!$('nFrom').value) { $('nFrom').value = iso(t); $('nTo').value = iso(t); }
+  $('nFrom').min = iso(new Date());
+  $('nTo').min = $('nFrom').value;
+  msg($('nMsg'), '');
+}
+$('nFrom').addEventListener('change', function () { $('nTo').min = this.value; if (!$('nTo').value || $('nTo').value < this.value) $('nTo').value = this.value; });
+
+$('newForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var b = $('nBtn'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+  api('createRequest', { fromDate: $('nFrom').value, toDate: $('nTo').value, departTime: $('nTime').value,
+    destination: $('nDest').value, project: $('nProj').value, notes: $('nNotes').value }).then(function (r) {
+    b.disabled = false; b.textContent = 'שלח בקשה';
+    if (!r.ok) return msg($('nMsg'), r.message);
+    $('nDest').value = ''; $('nProj').value = ''; $('nNotes').value = ''; $('nFrom').value = ''; $('nTo').value = '';
+    go('mine');
+  });
+});
+
+function loadMine() {
+  var el = $('mineList');
+  if (!S.mine) el.innerHTML = '<div class="center"><span class="spin"></span></div>';
+  api('myRequests').then(function (r) {
+    if (!r.ok) { el.innerHTML = '<div class="msg err">' + esc(r.message) + '</div>'; return; }
+    S.mine = r;
+    var cars = {}; r.cars.forEach(function (c) { cars[c.id] = c; });
+    if (!r.requests.length) { el.innerHTML = '<div class="card muted" style="text-align:center">עדיין אין בקשות. לחץ על "בקשה חדשה".</div>'; return; }
+    el.innerHTML = r.requests.map(function (q) {
+      var car = cars[q.carId];
+      var info = [q.departTime ? 'יציאה ' + q.departTime : '', q.project ? 'פרויקט ' + q.project : '', 'נשלח ' + dm(q.createdAt.slice(0, 10)) + ' ' + q.createdAt.slice(11)].filter(Boolean).join(' · ');
+      return '<article class="card req"><div class="h"><b>' + range(q.fromDate, q.toDate) + ' · ' + esc(q.destination) + '</b><span class="pill p-' + q.status + '">' + (q.status === 'approved' && car ? 'אושר' : ST[q.status]) + '</span></div>' +
+        (q.status === 'approved' ? '<div class="carbox"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0F5A37" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17h14v-4.5l-2-5H7l-2 5V17z"/><path d="M5 12.5h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg><div><b>' + esc(car ? car.name : 'רכב') + '</b>' + (car && car.plate ? '<div class="muted">מ"ר ' + esc(car.plate) + '</div>' : '') + '</div></div>' : '') +
+        '<span class="muted">' + esc(info) + '</span>' +
+        (q.notes ? '<span class="muted">הערות: ' + esc(q.notes) + '</span>' : '') +
+        (q.adminNote ? '<span class="muted"><b>הערת המזכירה:</b> ' + esc(q.adminNote) + '</span>' : '') +
+        (q.status === 'pending' ? '<div><button class="btn ghost sm" type="button" data-cancel="' + q.id + '">ביטול הבקשה</button></div>' : '') +
+        '</article>';
+    }).join('');
+  });
+}
+$('mineList').addEventListener('click', function (e) {
+  var id = e.target.getAttribute('data-cancel'); if (!id) return;
+  if (e.target.getAttribute('data-sure') !== '1') { e.target.setAttribute('data-sure', '1'); e.target.textContent = 'לחץ שוב לאישור הביטול'; e.target.className = 'btn bad sm'; return; }
+  e.target.disabled = true;
+  api('cancelRequest', { id: id }).then(function () { loadMine(); });
+});
+
+/* ---- מנהל ---- */
+function loadAdmin() {
+  if (!S.data) $('pendList').innerHTML = '<div class="center"><span class="spin"></span></div>';
+  api('adminData').then(function (r) {
+    if (!r.ok) return msg($('aMsg'), r.message);
+    S.data = r; renderAdmin();
+  });
+}
+function carsActive() { return S.data.cars.filter(function (c) { return c.active === 'yes'; }); }
+function carById(id) { for (var i = 0; i < S.data.cars.length; i++) if (S.data.cars[i].id === id) return S.data.cars[i]; return null; }
+function overlap(a, b) { return a.fromDate <= b.toDate && a.toDate >= b.fromDate; }
+function freeCars(q) {
+  var appr = S.data.requests.filter(function (x) { return x.status === 'approved' && x.id !== q.id && overlap(x, q); });
+  return carsActive().filter(function (c) { return !appr.some(function (x) { return x.carId === c.id; }); });
+}
+function renderAdmin() {
+  var d = S.data, today = iso(new Date()), tom = new Date(); tom.setDate(tom.getDate() + 1); tom = iso(tom);
+  var pend = d.requests.filter(function (r) { return r.status === 'pending'; }).sort(function (a, b) { return a.fromDate < b.fromDate ? -1 : 1; });
+  var appr = d.requests.filter(function (r) { return r.status === 'approved' && r.toDate >= today; }).sort(function (a, b) { return a.fromDate < b.fromDate ? -1 : 1; });
+  var busy = function (day) { return appr.filter(function (r) { return r.fromDate <= day && r.toDate >= day; }).length; };
+  var nCars = carsActive().length;
+  $('stats').innerHTML = '<div class="stat"><span class="muted">ממתינות לאישור</span><b style="color:var(--warn)">' + pend.length + '</b></div>' +
+    '<div class="stat"><span class="muted">רכבים בשטח היום</span><b>' + busy(today) + ' / ' + nCars + '</b></div>' +
+    '<div class="stat"><span class="muted">פנויים מחר</span><b style="color:var(--ok)">' + Math.max(0, nCars - busy(tom)) + '</b></div>';
+
+  $('pendList').innerHTML = pend.length ? pend.map(function (q) {
+    var free = freeCars(q);
+    var opts = free.length ? free.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }).join('') : '<option value="">אין רכב פנוי</option>';
+    return '<div class="arow" data-id="' + q.id + '">' +
+      '<div class="c"><b>' + esc(q.userName) + '</b><span class="muted">נשלח ' + esc(q.createdAt) + '</span></div>' +
+      '<div class="c"><b style="font-weight:500">' + range(q.fromDate, q.toDate) + ' · ' + dayName(q.fromDate) + '</b><span class="muted">' + (q.departTime ? 'יציאה ' + esc(q.departTime) : '') + '</span></div>' +
+      '<div class="c w"><b style="font-weight:500">' + esc(q.destination) + '</b><span class="muted">' + (q.project ? 'פרויקט ' + esc(q.project) : '') + (q.notes ? ' · ' + esc(q.notes) : '') + '</span></div>' +
+      '<div class="acts"><label class="f" style="font-size:13px;color:var(--muted)">רכב פנוי<select class="i" data-car>' + opts + '</select></label>' +
+      '<input class="i" data-note placeholder="הערה לעובד (לא חובה)" style="width:190px">' +
+      '<button class="btn ok sm" type="button" data-act="approve"' + (free.length ? '' : ' disabled') + '>אשר</button>' +
+      '<button class="btn bad sm" type="button" data-act="reject">דחה</button></div></div>';
+  }).join('') : '<p class="muted" style="margin:8px 0">אין בקשות ממתינות.</p>';
+
+  $('apprList').innerHTML = appr.length ? appr.slice(0, 30).map(function (q) {
+    var c = carById(q.carId);
+    return '<div class="arow" data-id="' + q.id + '">' +
+      '<div class="c"><b>' + esc(q.userName) + '</b><span class="muted">' + esc(q.destination) + (q.project ? ' · פרויקט ' + esc(q.project) : '') + '</span></div>' +
+      '<div class="c"><b style="font-weight:500">' + range(q.fromDate, q.toDate) + ' · ' + dayName(q.fromDate) + '</b><span class="muted">' + (q.departTime ? 'יציאה ' + esc(q.departTime) : '') + '</span></div>' +
+      '<div class="c"><span class="pill p-approved" style="align-self:flex-start">' + esc(c ? c.name : '?') + '</span></div>' +
+      '<div class="acts"><button class="btn ghost sm" type="button" data-act="unassign">החזר להמתנה</button></div></div>';
+  }).join('') : '<p class="muted" style="margin:8px 0">אין שיבוצים קרובים.</p>';
+
+  renderBoard(); renderUsers(); renderCars();
+}
+
+function onRowAction(e) {
+  var act = e.target.getAttribute('data-act'); if (!act) return;
+  var row = e.target.closest('.arow'), id = row.getAttribute('data-id');
+  var carSel = row.querySelector('[data-car]'), note = row.querySelector('[data-note]');
+  if (act === 'reject' && e.target.getAttribute('data-sure') !== '1') { e.target.setAttribute('data-sure', '1'); e.target.textContent = 'לדחות? לחץ שוב'; return; }
+  row.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+  api('decide', { id: id, decision: act, carId: carSel ? carSel.value : '', note: note ? note.value : '' }).then(function (r) {
+    if (!r.ok) msg($('aMsg'), r.message); else msg($('aMsg'), act === 'approve' ? 'הבקשה אושרה והעובד יראה את הרכב ב"הבקשות שלי"' : act === 'reject' ? 'הבקשה נדחתה' : 'השיבוץ בוטל והבקשה חזרה להמתנה', true);
+    loadAdmin();
+  });
+}
+$('pendList').addEventListener('click', onRowAction);
+$('apprList').addEventListener('click', onRowAction);
+
+function renderBoard() {
+  var base = new Date(); base.setHours(0, 0, 0, 0); base.setDate(base.getDate() - base.getDay() + S.week * 7);
+  var days = []; for (var i = 0; i < 5; i++) { var x = new Date(base); x.setDate(base.getDate() + i); days.push(iso(x)); }
+  $('weekTitle').textContent = 'שבוע ' + dm(days[0]) + '–' + dm(days[4]);
+  var reqs = S.data.requests;
+  var h = '<div></div>' + days.map(function (d, i) { return '<div class="gh">' + DAYS[i] + ' ' + dm(d) + '</div>'; }).join('');
+  carsActive().forEach(function (c) {
+    h += '<div class="gname">' + esc(c.name) + '</div>';
+    days.forEach(function (d) {
+      var a = reqs.filter(function (r) { return r.status === 'approved' && r.carId === c.id && r.fromDate <= d && r.toDate >= d; })[0];
+      h += a ? '<div class="gc busy" title="' + esc(a.destination) + '">' + esc(a.userName) + '</div>' : '<div class="gc free">פנוי</div>';
+    });
+  });
+  var waiting = days.map(function (d) { return reqs.filter(function (r) { return r.status === 'pending' && r.fromDate <= d && r.toDate >= d; }); });
+  h += '<div class="gname" style="color:var(--warn)">ממתינים</div>';
+  waiting.forEach(function (w) { h += w.length ? '<div class="gc wait">' + w.map(function (r) { return esc(r.userName); }).join('<br>') + '</div>' : '<div class="gc free">—</div>'; });
+  $('grid').innerHTML = h;
+}
+$('wPrev').addEventListener('click', function () { S.week--; renderBoard(); });
+$('wNext').addEventListener('click', function () { S.week++; renderBoard(); });
+$('wNow').addEventListener('click', function () { S.week = 0; renderBoard(); });
+
+function renderUsers() {
+  var u = S.data.users.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'he'); });
+  $('uCount').textContent = 'עובדים (' + u.length + ')';
+  $('uList').innerHTML = u.map(function (x) {
+    return '<tr><td>' + esc(x.name) + '</td><td>' + (x.role === 'admin' ? 'מנהל / מזכירה' : 'עובד') + '</td><td style="text-align:left">' +
+      (x.name === S.name ? '<span class="muted">אתה</span>' : '<button class="btn bad sm" type="button" data-del="' + esc(x.name) + '">מחק</button>') + '</td></tr>';
+  }).join('');
+}
+$('uList').addEventListener('click', function (e) {
+  var n = e.target.getAttribute('data-del'); if (!n) return;
+  if (e.target.getAttribute('data-sure') !== '1') { e.target.setAttribute('data-sure', '1'); e.target.textContent = 'למחוק? לחץ שוב'; return; }
+  e.target.disabled = true;
+  api('removeUser', { name: n }).then(function (r) { msg($('aMsg'), r.ok ? 'העובד נמחק' : r.message, r.ok); loadAdmin(); });
+});
+$('uForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  api('addUser', { name: $('uName').value, pass: $('uPass').value, role: $('uRole').value }).then(function (r) {
+    msg($('aMsg'), r.ok ? (r.updated ? 'פרטי העובד עודכנו' : 'העובד נוסף. הוא יכול להיכנס עם השם ותעודת הזהות') : r.message, r.ok);
+    if (r.ok) { $('uName').value = ''; $('uPass').value = ''; $('uRole').value = 'user'; }
+    loadAdmin();
+  });
+});
+
+function renderCars() {
+  $('cList').innerHTML = carsActive().map(function (c) {
+    return '<tr data-id="' + c.id + '"><td><input class="i" data-n value="' + esc(c.name) + '" aria-label="שם הרכב" style="min-height:44px"></td><td><input class="i" data-p value="' + esc(c.plate) + '" aria-label="מספר רישוי" style="min-height:44px"></td>' +
+      '<td style="text-align:left;white-space:nowrap"><button class="btn ghost sm" type="button" data-save>שמור</button> <button class="btn bad sm" type="button" data-rm>הסר</button></td></tr>';
+  }).join('');
+}
+$('cList').addEventListener('click', function (e) {
+  var tr = e.target.closest('tr'); if (!tr) return; var id = tr.getAttribute('data-id');
+  if (e.target.hasAttribute('data-save')) {
+    api('updateCar', { id: id, name: tr.querySelector('[data-n]').value, plate: tr.querySelector('[data-p]').value }).then(function (r) { msg($('aMsg'), r.ok ? 'הרכב עודכן' : r.message, r.ok); loadAdmin(); });
+  }
+  if (e.target.hasAttribute('data-rm')) {
+    if (e.target.getAttribute('data-sure') !== '1') { e.target.setAttribute('data-sure', '1'); e.target.textContent = 'להסיר? לחץ שוב'; return; }
+    api('removeCar', { id: id }).then(function (r) { msg($('aMsg'), r.ok ? 'הרכב הוסר' : r.message, r.ok); loadAdmin(); });
+  }
+});
+$('cForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  api('addCar', { name: $('cName').value, plate: $('cPlate').value }).then(function (r) {
+    msg($('aMsg'), r.ok ? 'הרכב נוסף' : r.message, r.ok);
+    if (r.ok) { $('cName').value = ''; $('cPlate').value = ''; }
+    loadAdmin();
+  });
+});
+
+/* רענון אוטומטי למזכירה כל דקה */
+setInterval(function () { if (S.token && S.role === 'admin' && !document.hidden && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement||{}).tagName||'') && S.view !== 'users' && S.view !== 'cars') loadAdmin(); }, 60000);
+
+/* ---- הפעלה ---- */
+(function () {
+  S.token = load('cb_token'); S.name = load('cb_name') || ''; S.role = load('cb_role') || '';
+  S.remember = true;
+  if (!S.token) { show($('loading'), false); show($('vLogin'), true); return; }
+  api('me').then(function (r) {
+    if (!r.ok) { logout(); return; }
+    S.name = r.name; S.role = r.role; start();
+  });
+})();
+</script>
+</body>
+</html>
