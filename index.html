@@ -196,7 +196,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-18-5';
+var APP_VERSION = '2026-11-18-6';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -579,7 +579,7 @@ function checkVersion() {
   }).catch(function () {});
 }
 setTimeout(checkVersion, 1500);
-setInterval(checkVersion, 5 * 60000);
+setInterval(checkVersion, 60000);
 document.addEventListener('visibilitychange', function () { if (!document.hidden) checkVersion(); });
 
 /* ---- הפעלה ---- */
