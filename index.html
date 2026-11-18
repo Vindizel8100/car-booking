@@ -229,7 +229,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-18-13';
+var APP_VERSION = '2026-11-18-14';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -758,7 +758,7 @@ function renderBoard() {
     h += '<div class="gname">' + esc(c.name) + '</div>';
     days.forEach(function (d) {
       var a = reqs.filter(function (r) { var e = eff(r); return r.status === 'approved' && e.carId === c.id && e.fromDate <= d && e.toDate >= d; })[0];
-      h += a ? '<div class="gc busy" title="' + esc(a.destination) + '"><span>' + esc(a.userName) + '<small class="gcar">' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</small></span></div>' : '<div class="gc free">פנוי</div>';
+      h += a ? '<div class="gc busy" title="' + esc(a.destination) + '"><span>' + esc(a.userName) + '<small class="gcar">' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</small>' + (a.destination ? '<small class="gcar">' + esc(a.destination) + '</small>' : '') + '</span></div>' : '<div class="gc free">פנוי</div>';
     });
   });
   var waiting = days.map(function (d) { return reqs.filter(function (r) { return r.status === 'pending' && r.fromDate <= d && r.toDate >= d; }); });
