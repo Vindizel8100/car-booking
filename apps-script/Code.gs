@@ -89,7 +89,8 @@ function handle(req) {
     addCar: function () { return addCar(req); },
     updateCar: function () { return updateCar(req); },
     removeCar: function () { return removeCar(req.id); },
-    assignCars: function () { return assignCars(me, req.changes); }
+    assignCars: function () { return assignCars(me, req.changes); },
+    adminCreate: function () { return adminCreate(me, req); }
   };
   if (!fns[a]) return { ok: false, message: 'פעולה לא מוכרת' };
   res = withLock(fns[a]);
@@ -233,6 +234,31 @@ function runs(list) {
     if (last && dateList(last[1], d).length === 2) last[1] = d; else out.push([d, d]);
   });
   return out;
+}
+
+/* המזכירה מוסיפה נסיעה בשם עובד. עם רכב – נשמרת כמאושרת. בלי רכב – נשמרת כממתינה */
+function adminCreate(me, q) {
+  var user = findUser(q.userName);
+  if (!user) return { ok: false, message: 'יש לבחור עובד מהרשימה' };
+  var from = cleanDate(q.fromDate), to = cleanDate(q.toDate) || from;
+  if (!from) return { ok: false, message: 'יש לבחור תאריך' };
+  if (to < from) return { ok: false, message: 'תאריך הסיום לפני תאריך ההתחלה' };
+  var dest = clip(q.destination, 120);
+  if (!dest) return { ok: false, message: 'יש למלא לאן הנסיעה' };
+  var carId = String(q.carId || '');
+  if (carId) {
+    var car = findRow('Cars', 'id', carId);
+    if (!car || car.data.active !== 'yes') return { ok: false, message: 'הרכב לא נמצא' };
+    var clash = readRows('Requests').filter(function (x) { return x.status === 'approved' && x.carId === carId && x.fromDate <= to && x.toDate >= from; });
+    if (clash.length) return { ok: false, message: car.data.name + ' כבר משובץ ל' + clash[0].userName + ' בתאריכים האלה' };
+  }
+  appendRow('Requests', {
+    id: newId(), userName: user.name, fromDate: from, toDate: to,
+    departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), notes: clip(q.notes, 300),
+    status: carId ? 'approved' : 'pending', carId: carId, adminNote: clip(q.adminNote, 200),
+    createdAt: nowStr(), decidedAt: carId ? nowStr() : '', decidedBy: carId ? me.name : ''
+  });
+  return { ok: true };
 }
 
 /* שמירה של כמה שינויי רכב בבת אחת. נשמר רק אם אין רכב שמשובץ לשני אנשים באותו יום */
