@@ -179,9 +179,9 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
     <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
       <h2 id="weekTitle" style="margin:0"></h2>
       <div style="display:flex;gap:8px">
-        <button class="btn ghost sm" type="button" id="wNext">שבוע הבא ←</button>
-        <button class="btn ghost sm" type="button" id="wNow">השבוע</button>
         <button class="btn ghost sm" type="button" id="wPrev">→ שבוע קודם</button>
+        <button class="btn ghost sm" type="button" id="wNow">השבוע</button>
+        <button class="btn ghost sm" type="button" id="wNext">שבוע הבא ←</button>
       </div>
     </div>
     <div class="legend"><span><i class="sw" style="background:var(--busy)"></i>משובץ</span><span><i class="sw" style="background:var(--warn-bg);border:1px dashed #B07A10"></i>בקשה ממתינה</span><span><i class="sw" style="background:var(--bg);border:1px solid var(--line)"></i>פנוי</span></div>
@@ -216,7 +216,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-18-10';
+var APP_VERSION = '2026-11-18-12';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -439,14 +439,32 @@ function apprUpcoming() {
   var today = iso(new Date());
   return S.data.requests.filter(function (r) { return r.status === 'approved' && r.toDate >= today; }).sort(function (a, b) { return a.fromDate < b.fromDate ? -1 : 1; });
 }
-function carOf(q) { return assignDraft.hasOwnProperty(q.id) ? assignDraft[q.id] : q.carId; }
+/* הערכים של נסיעה כולל שינויים שעוד לא נשמרו */
+function eff(q) {
+  var d = assignDraft[q.id] || {};
+  return { id: q.id, userName: q.userName, carId: d.hasOwnProperty('carId') ? d.carId : q.carId,
+    fromDate: d.fromDate || q.fromDate, toDate: d.toDate || q.toDate };
+}
+function carOf(q) { return eff(q).carId; }
+function setDraft(q, key, val) {
+  var d = assignDraft[q.id] || {};
+  d[key] = val;
+  if (d.carId === q.carId) delete d.carId;
+  if (d.fromDate === q.fromDate) delete d.fromDate;
+  if (d.toDate === q.toDate) delete d.toDate;
+  if (Object.keys(d).length) assignDraft[q.id] = d; else delete assignDraft[q.id];
+}
 /* בודק התנגשויות: אותו רכב לשני אנשים באותם ימים, או נסיעה בלי רכב */
 function assignProblems() {
   var list = S.data.requests.filter(function (r) { return r.status === 'approved'; }), bad = {}, msgs = [];
-  list.forEach(function (q) { if (!carOf(q)) { bad[q.id] = 'לא נבחר רכב'; msgs.push('לנסיעה של ' + q.userName + ' (' + range(q.fromDate, q.toDate) + ') לא נבחר רכב'); } });
+  list = list.map(eff);
+  list.forEach(function (q) {
+    if (!q.carId) { bad[q.id] = 'לא נבחר רכב'; msgs.push('לנסיעה של ' + q.userName + ' (' + range(q.fromDate, q.toDate) + ') לא נבחר רכב'); }
+    if (!q.fromDate || !q.toDate || q.toDate < q.fromDate) { bad[q.id] = 'תאריכים לא תקינים'; msgs.push('בנסיעה של ' + q.userName + ' תאריך הסיום לפני תאריך ההתחלה'); }
+  });
   for (var i = 0; i < list.length; i++) for (var j = i + 1; j < list.length; j++) {
-    var p = list[i], q = list[j], c = carOf(p);
-    if (c && c === carOf(q) && overlap(p, q)) {
+    var p = list[i], q = list[j], c = p.carId;
+    if (c && c === q.carId && overlap(p, q)) {
       var n = (carById(c) || {}).name || '';
       bad[p.id] = n + ' כפול עם ' + q.userName; bad[q.id] = n + ' כפול עם ' + p.userName;
       msgs.push(n + ' משובץ גם ל' + p.userName + ' וגם ל' + q.userName + ' ב-' + range(q.fromDate > p.fromDate ? q.fromDate : p.fromDate, q.toDate < p.toDate ? q.toDate : p.toDate));
@@ -454,25 +472,45 @@ function assignProblems() {
   }
   return { bad: bad, msgs: msgs };
 }
+function tripForm(q) {
+  var inp = function (lbl, k, type, val) { return '<label class="f">' + lbl + '<input class="i" data-k="' + k + '" type="' + (type || 'text') + '" value="' + esc(val) + '"></label>'; };
+  var cars = freeCars(q);
+  return '<div class="stack" data-trip-form style="flex-basis:100%;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:6px">' +
+    '<b>עריכת הנסיעה של ' + esc(q.userName) + '</b>' +
+    '<div class="row2">' + inp('מתאריך', 'fromDate', 'date', q.fromDate) + inp('עד תאריך', 'toDate', 'date', q.toDate) + '</div>' +
+    '<div class="row2">' + inp('שעת יציאה', 'departTime', 'time', q.departTime) +
+      '<label class="f">רכב<select class="i" data-k="carId"><option value="">בלי רכב (ממתין)</option>' + cars.map(function (c) { return '<option value="' + c.id + '"' + (c.id === q.carId ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label></div>' +
+    inp('לאן הנסיעה?', 'destination', 'text', q.destination) + inp('מספר פרויקט', 'project', 'text', q.project) +
+    inp('הערות', 'notes', 'text', q.notes) + inp('הערה לעובד', 'adminNote', 'text', q.adminNote) +
+    '<p class="muted" style="margin:0">ברשימת הרכבים מופיעים רק רכבים שפנויים בתאריכים שנבחרו. אחרי שינוי תאריכים הרשימה מתעדכנת.</p>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ok sm" type="button" data-trip-save>שמור שינויים</button><button class="btn ghost sm" type="button" data-trip-close>ביטול</button></div></div>';
+}
 function renderAssign() {
   Object.keys(assignDraft).forEach(function (id) {
     var q = null; S.data.requests.forEach(function (x) { if (x.id === id) q = x; });
-    if (!q || q.status !== 'approved' || q.carId === assignDraft[id]) delete assignDraft[id];
+    if (!q || q.status !== 'approved') { delete assignDraft[id]; return; }
+    var d = assignDraft[id];
+    ['carId', 'fromDate', 'toDate'].forEach(function (k) { if (d.hasOwnProperty(k) && d[k] === q[k]) delete d[k]; });
+    if (!Object.keys(d).length) delete assignDraft[id];
   });
   var appr = apprUpcoming(), pr = assignProblems();
   $('apprList').innerHTML = appr.length ? appr.map(function (q) {
-    var cur = carOf(q), changed = assignDraft.hasOwnProperty(q.id), err = pr.bad[q.id];
+    var e = eff(q), cur = e.carId, changed = assignDraft.hasOwnProperty(q.id), err = pr.bad[q.id];
     return '<div class="arow" data-id="' + q.id + '" style="' + (err ? 'background:var(--bad-bg);' : changed ? 'background:var(--warn-bg);' : '') + 'border-radius:10px;padding-inline:8px">' +
       '<div class="c"><b>' + esc(q.userName) + '</b><span class="muted">' + esc(q.destination) + (q.project ? ' · פרויקט ' + esc(q.project) : '') + '</span></div>' +
-      '<div class="c"><b style="font-weight:500">' + range(q.fromDate, q.toDate) + ' · ' + dayName(q.fromDate) + '</b><span class="muted">' + (q.departTime ? 'יציאה ' + esc(q.departTime) : '') + '</span></div>' +
+      '<div class="acts" style="flex:2 1 260px"><label class="f" style="font-size:13px;color:var(--muted)">מתאריך<input class="i" type="date" data-df value="' + e.fromDate + '" style="min-height:44px"></label>' +
+        '<label class="f" style="font-size:13px;color:var(--muted)">עד תאריך<input class="i" type="date" data-dt value="' + e.toDate + '" min="' + e.fromDate + '" style="min-height:44px"></label>' +
+        '<span class="muted" style="align-self:center">' + (q.departTime ? 'יציאה ' + esc(q.departTime) : '') + '</span></div>' +
       '<div class="acts"><label class="f" style="font-size:13px;color:var(--muted)">רכב' + (err ? ' – <b style="color:var(--bad)">' + esc(err) + '</b>' : changed ? ' – שונה, לא נשמר' : '') +
         '<select class="i" data-assign><option value=""' + (cur ? '' : ' selected') + '></option>' +
         carsActive().map(function (fc) {
-          var others = holdersDraft(q, fc.id);
+          var others = holdersDraft(e, fc.id);
           return '<option value="' + fc.id + '"' + (fc.id === cur ? ' selected' : '') + '>' + esc(fc.name) + (others.length ? ' (גם אצל ' + esc(others.join(', ')) + ')' : '') + '</option>';
         }).join('') +
       '</select></label>' +
-      '<button class="btn ghost sm" type="button" data-act="unassign">החזר להמתנה</button></div></div>';
+      '<button class="btn ghost sm" type="button" data-edit-trip>ערוך</button>' +
+      '<button class="btn ghost sm" type="button" data-act="unassign">החזר להמתנה</button></div>' +
+      (S.editTrip === q.id ? tripForm(q) : '') + '</div>';
   }).join('') : '<p class="muted" style="margin:8px 0">אין שיבוצים קרובים.</p>';
   var n = Object.keys(assignDraft).length, btn = $('aSaveAll');
   btn.disabled = n === 0 || pr.msgs.length > 0;
@@ -482,24 +520,62 @@ function renderAssign() {
 }
 function holdersDraft(q, carId) {
   var names = [];
-  S.data.requests.forEach(function (x) { if (x.id !== q.id && x.status === 'approved' && carOf(x) === carId && overlap(x, q) && names.indexOf(x.userName) < 0) names.push(x.userName); });
+  S.data.requests.forEach(function (x) { if (x.id !== q.id && x.status === 'approved' && carOf(x) === carId && overlap(eff(x), q) && names.indexOf(x.userName) < 0) names.push(x.userName); });
   return names;
 }
 $('apprList').addEventListener('change', function (e) {
+  if (e.target.hasAttribute('data-df') || e.target.hasAttribute('data-dt')) {
+    var rid = e.target.closest('.arow').getAttribute('data-id'), rq = null;
+    S.data.requests.forEach(function (x) { if (x.id === rid) rq = x; });
+    var row = e.target.closest('.arow'), f = row.querySelector('[data-df]').value, t = row.querySelector('[data-dt]').value;
+    if (e.target.hasAttribute('data-df') && (!t || t < f)) t = f;
+    setDraft(rq, 'fromDate', f); setDraft(rq, 'toDate', t);
+    renderAssign(); renderBoard();
+    return;
+  }
+  var tf = e.target.closest('[data-trip-form]');
+  if (tf && (e.target.getAttribute('data-k') === 'fromDate' || e.target.getAttribute('data-k') === 'toDate')) {
+    var f = tf.querySelector('[data-k=fromDate]'), t = tf.querySelector('[data-k=toDate]');
+    if (!t.value || t.value < f.value) t.value = f.value;
+    var sel = tf.querySelector('[data-k=carId]'), keep = sel.value, id0 = tf.closest('.arow').getAttribute('data-id');
+    var free = freeCars({ id: id0, fromDate: f.value, toDate: t.value });
+    sel.innerHTML = '<option value="">בלי רכב (ממתין)</option>' + free.map(function (c) { return '<option value="' + c.id + '"' + (c.id === keep ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('');
+    return;
+  }
   if (!e.target.hasAttribute('data-assign')) return;
   var id = e.target.closest('.arow').getAttribute('data-id'), q = null;
   S.data.requests.forEach(function (x) { if (x.id === id) q = x; });
-  if (e.target.value === q.carId) delete assignDraft[id]; else assignDraft[id] = e.target.value;
+  setDraft(q, 'carId', e.target.value);
   renderAssign(); renderBoard();
+});
+$('apprList').addEventListener('click', function (e) {
+  var t = e.target, row = t.closest('.arow'); if (!row) return;
+  var id = row.getAttribute('data-id');
+  if (t.hasAttribute('data-edit-trip')) { S.editTrip = S.editTrip === id ? null : id; renderAssign(); return; }
+  if (t.hasAttribute('data-trip-close')) { S.editTrip = null; renderAssign(); return; }
+  if (t.hasAttribute('data-trip-save')) {
+    var body = { id: id };
+    row.querySelectorAll('[data-trip-form] [data-k]').forEach(function (el) { body[el.getAttribute('data-k')] = el.value; });
+    t.disabled = true; t.innerHTML = '<span class="spin"></span>';
+    api('adminEdit', body).then(function (r) {
+      if (!r.ok) { t.disabled = false; t.textContent = 'שמור שינויים'; msg($('aMsg'), r.message); window.scrollTo(0, 0); return; }
+      S.editTrip = null; delete assignDraft[id];
+      msg($('aMsg'), body.carId ? 'הנסיעה עודכנה. העובד יראה את השינויים ב"הבקשות שלי"' : 'הנסיעה עודכנה והועברה לבקשות ממתינות', true);
+      if (r.data) applyAdmin(r); else loadAdmin();
+    });
+  }
 });
 $('aSaveAll').addEventListener('click', function () {
   var ids = Object.keys(assignDraft); if (!ids.length || assignProblems().msgs.length) return;
-  var changes = ids.map(function (id) { return { id: id, carId: assignDraft[id] }; });
+  var changes = ids.map(function (id) {
+    var q = null; S.data.requests.forEach(function (x) { if (x.id === id) q = x; });
+    var e = eff(q); return { id: id, carId: e.carId, fromDate: e.fromDate, toDate: e.toDate };
+  });
   var b = this; b.disabled = true; b.innerHTML = '<span class="spin"></span>';
   api('assignCars', { changes: changes }).then(function (r) {
     if (!r.ok) { msg($('aMsg'), r.message); renderAssign(); return; }
     assignDraft = {};
-    msg($('aMsg'), 'השיבוצים נשמרו. העובדים יראו את הרכבים החדשים ב"הבקשות שלי"', true);
+    msg($('aMsg'), 'השינויים נשמרו. העובדים יראו אותם ב"הבקשות שלי"', true);
     if (r.data) applyAdmin(r); else loadAdmin();
   });
 });
@@ -623,7 +699,7 @@ function renderBoard() {
   carsActive().forEach(function (c) {
     h += '<div class="gname">' + esc(c.name) + '</div>';
     days.forEach(function (d) {
-      var a = reqs.filter(function (r) { return r.status === 'approved' && carOf(r) === c.id && r.fromDate <= d && r.toDate >= d; })[0];
+      var a = reqs.filter(function (r) { var e = eff(r); return r.status === 'approved' && e.carId === c.id && e.fromDate <= d && e.toDate >= d; })[0];
       h += a ? '<div class="gc busy" title="' + esc(a.destination) + '"><span>' + esc(a.userName) + '<small class="gcar">' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</small></span></div>' : '<div class="gc free">פנוי</div>';
     });
   });
@@ -750,12 +826,12 @@ $('cForm').addEventListener('submit', function (e) {
 });
 
 /* רענון אוטומטי למזכירה כל דקה */
-setInterval(function () { if (S.token && S.role === 'admin' && !document.hidden && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement||{}).tagName||'') && S.view !== 'users' && S.view !== 'cars') loadAdmin(); }, 60000);
+setInterval(function () { if (S.token && S.role === 'admin' && !document.hidden && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement||{}).tagName||'') && !S.editTrip && $('mForm').classList.contains('hidden') && S.view !== 'users' && S.view !== 'cars') loadAdmin(); }, 60000);
 
 /* ---- עדכון אוטומטי לגרסה חדשה של האתר ----
    הדפדפן שומר עותק של האתר עד 10 דקות. כאן בודקים אם יש גרסה חדשה וטוענים אותה. */
 function checkVersion() {
-  if (Object.keys(carDraft).length || Object.keys(assignDraft).length || S.editUser || !$('mForm').classList.contains('hidden') || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
+  if (Object.keys(carDraft).length || Object.keys(assignDraft).length || S.editUser || S.editTrip || !$('mForm').classList.contains('hidden') || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return;
   fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (t) {
     var m = t.match(/APP_VERSION = '([^']+)'/);
     if (m && m[1] !== APP_VERSION) location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]));
