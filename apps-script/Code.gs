@@ -299,6 +299,11 @@ function assignCars(me, changes) {
     if (!x || x.status !== 'approved') return { ok: false, message: 'אחת הנסיעות כבר לא מאושרת. רענן את הדף' };
     if (!cars[ch.carId]) return { ok: false, message: 'יש לבחור רכב לנסיעה של ' + x.userName };
     x.carId = ch.carId;
+    if (ch.fromDate || ch.toDate) {
+      var f = cleanDate(ch.fromDate || x.fromDate), t = cleanDate(ch.toDate || x.toDate);
+      if (!f || !t || t < f) return { ok: false, message: 'תאריכים לא תקינים בנסיעה של ' + x.userName };
+      x.fromDate = f; x.toDate = t;
+    }
   }
   var appr = all.filter(function (x) { return x.status === 'approved'; });
   for (var a = 0; a < appr.length; a++) for (var b = a + 1; b < appr.length; b++) {
@@ -308,7 +313,8 @@ function assignCars(me, changes) {
   }
   changes.forEach(function (ch) {
     var r = findRow('Requests', 'id', ch.id);
-    updateRow('Requests', r.row, { carId: ch.carId, decidedAt: nowStr(), decidedBy: me.name });
+    var x = byId[ch.id];
+    updateRow('Requests', r.row, { carId: x.carId, fromDate: x.fromDate, toDate: x.toDate, decidedAt: nowStr(), decidedBy: me.name });
   });
   return { ok: true };
 }
