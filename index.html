@@ -91,6 +91,11 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 .center{display:flex;justify-content:center;padding:30px;color:var(--muted)}
 .check{display:flex;align-items:center;gap:10px;min-height:44px;font-size:15px;color:var(--muted)}
 .check input{width:20px;height:20px}
+/* שדות תאריך: מציגים יום/חודש/שנה בלי קשר לשפת הדפדפן */
+.dwrap{position:relative;display:block}
+.dwrap input[type=date]{color:transparent}
+.dwrap input[type=date]:focus{color:transparent}
+.dshow{position:absolute;inset:1px;display:flex;align-items:center;padding:0 38px 0 12px;pointer-events:none;font-size:16px;color:var(--ink);background:transparent}
 @media (max-width:640px){#tabs{order:3;flex-basis:100%}.title b{font-size:18px}}
 @media (max-width:420px){.row2{grid-template-columns:1fr}}
 </style>
@@ -229,7 +234,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-18-14';
+var APP_VERSION = '2026-11-18-15';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -901,6 +906,30 @@ function checkVersion() {
 setTimeout(checkVersion, 1500);
 setInterval(checkVersion, 60000);
 document.addEventListener('visibilitychange', function () { if (!document.hidden) checkVersion(); });
+
+/* ---- תצוגת תאריכים בפורמט יום/חודש/שנה ---- */
+function fmtDate(v) { if (!v) return ''; var p = v.split('-'); return '\u2066' + p[2] + '/' + p[1] + '/' + p[0] + '\u2069'; }
+function enhanceDates(root) {
+  (root || document).querySelectorAll('input[type=date]:not([data-dx])').forEach(function (inp) {
+    inp.setAttribute('data-dx', '1');
+    var wrap = document.createElement('span'); wrap.className = 'dwrap';
+    inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
+    var showEl = document.createElement('span'); showEl.className = 'dshow'; showEl.setAttribute('aria-hidden', 'true');
+    wrap.appendChild(showEl);
+    inp.addEventListener('click', function () { try { inp.showPicker(); } catch (e) {} });
+  });
+}
+function refreshDates() {
+  document.querySelectorAll('input[type=date][data-dx]').forEach(function (inp) {
+    var s = inp.parentNode.querySelector('.dshow'), t = fmtDate(inp.value);
+    if (s && s.textContent !== t) s.textContent = t;
+  });
+}
+new MutationObserver(function () { enhanceDates(); refreshDates(); }).observe(document.body, { childList: true, subtree: true });
+document.addEventListener('input', refreshDates, true);
+document.addEventListener('change', refreshDates, true);
+setInterval(refreshDates, 300);
+enhanceDates(); refreshDates();
 
 /* ---- הפעלה ---- */
 (function () {
