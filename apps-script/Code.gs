@@ -170,8 +170,11 @@ function createRequest(me, q) {
 function cancelRequest(me, id) {
   var r = findRow('Requests', 'id', id);
   if (!r || (r.data.userName !== me.name && me.role !== 'admin')) return { ok: false, message: 'הבקשה לא נמצאה' };
-  if (r.data.status !== 'pending' && me.role !== 'admin') return { ok: false, message: 'אפשר לבטל רק בקשה שממתינה. לביטול שיבוץ פנה למזכירה' };
-  updateRow('Requests', r.row, { status: 'cancelled', decidedAt: nowStr(), decidedBy: me.name });
+  if (r.data.status !== 'pending' && r.data.status !== 'approved') return { ok: false, message: 'אי אפשר לבטל את הבקשה הזאת' };
+  var today = Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd');
+  if (r.data.status === 'approved' && r.data.toDate < today && me.role !== 'admin') return { ok: false, message: 'אי אפשר לבטל נסיעה שכבר עברה' };
+  // שומרים את הרכב שהיה משובץ, כדי שהמזכירה תראה איזה רכב התפנה
+  updateRow('Requests', r.row, { status: 'cancelled', adminNote: r.data.status === 'approved' ? 'בוטל אחרי אישור' : r.data.adminNote, decidedAt: nowStr(), decidedBy: me.name });
   return { ok: true };
 }
 
