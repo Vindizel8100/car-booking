@@ -68,19 +68,32 @@ function handle(req) {
 
   if (a === 'me') return { ok: true, name: me.name, role: me.role };
   if (a === 'myRequests') return { ok: true, requests: myRequests(me.name), cars: activeCars() };
-  if (a === 'createRequest') return withLock(function () { return createRequest(me, req); });
-  if (a === 'cancelRequest') return withLock(function () { return cancelRequest(me, req.id); });
+
+  var res;
+  if (a === 'createRequest') res = withLock(function () { return createRequest(me, req); });
+  else if (a === 'cancelRequest') res = withLock(function () { return cancelRequest(me, req.id); });
+  if (res) {
+    // מחזירים את הרשימה המעודכנת באותה תשובה, כדי לחסוך פנייה נוספת לשרת
+    if (res.ok) res.mine = { requests: myRequests(me.name), cars: activeCars() };
+    return res;
+  }
 
   if (me.role !== 'admin') return { ok: false, message: 'אין הרשאה' };
   if (a === 'adminData') return adminData();
-  if (a === 'decide') return withLock(function () { return decide(me, req); });
-  if (a === 'addUser') return withLock(function () { return addUser(req); });
-  if (a === 'updateUser') return withLock(function () { return updateUser(me, req); });
-  if (a === 'removeUser') return withLock(function () { return removeUser(me, req.name); });
-  if (a === 'addCar') return withLock(function () { return addCar(req); });
-  if (a === 'updateCar') return withLock(function () { return updateCar(req); });
-  if (a === 'removeCar') return withLock(function () { return removeCar(req.id); });
-  return { ok: false, message: 'פעולה לא מוכרת' };
+  var fns = {
+    decide: function () { return decide(me, req); },
+    addUser: function () { return addUser(req); },
+    updateUser: function () { return updateUser(me, req); },
+    removeUser: function () { return removeUser(me, req.name); },
+    addCar: function () { return addCar(req); },
+    updateCar: function () { return updateCar(req); },
+    removeCar: function () { return removeCar(req.id); }
+  };
+  if (!fns[a]) return { ok: false, message: 'פעולה לא מוכרת' };
+  res = withLock(fns[a]);
+  var d = adminData();
+  res.data = { requests: d.requests, cars: d.cars, users: d.users };
+  return res;
 }
 
 /* ---------- התחברות ---------- */
