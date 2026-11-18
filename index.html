@@ -153,6 +153,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
   <div id="aReq" class="stack">
     <div class="stats" id="stats"></div>
     <div class="card"><h2>בקשות ממתינות</h2><div id="pendList"></div></div>
+    <div class="card hidden" id="cancCard"><h2>ביטולים של נסיעות מאושרות</h2><p class="muted" style="margin:0 0 6px">הרכבים האלה התפנו כי העובד ביטל את הנסיעה</p><div id="cancList"></div></div>
     <div class="card"><h2>שיבוצים קרובים</h2><div id="apprList"></div></div>
   </div>
   <div id="aBoard" class="card stack hidden">
@@ -196,7 +197,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-18-6';
+var APP_VERSION = '2026-11-18-7';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -346,16 +347,22 @@ function renderMine() {
       '<span class="muted">' + esc(info) + '</span>' +
       (q.notes ? '<span class="muted">הערות: ' + esc(q.notes) + '</span>' : '') +
       (q.adminNote ? '<span class="muted"><b>הערת המזכירה:</b> ' + esc(q.adminNote) + '</span>' : '') +
-      (q.status === 'pending' && !q.sending ? '<div><button class="btn ghost sm" type="button" data-cancel="' + q.id + '">ביטול הבקשה</button></div>' : '') +
+      ((q.status === 'pending' && !q.sending) || (q.status === 'approved' && q.toDate >= iso(new Date())) ? '<div><button class="btn ghost sm" type="button" data-cancel="' + q.id + '">' + (q.status === 'approved' ? 'הנסיעה התבטלה – החזר את הרכב' : 'ביטול הבקשה') + '</button></div>' : '') +
       '</article>';
   }).join('');
 }
 $('mineList').addEventListener('click', function (e) {
   var id = e.target.getAttribute('data-cancel'); if (!id) return;
   if (e.target.getAttribute('data-sure') !== '1') { e.target.setAttribute('data-sure', '1'); e.target.textContent = 'לחץ שוב לאישור הביטול'; e.target.className = 'btn bad sm'; return; }
-  S.mine.requests.forEach(function (x) { if (x.id === id) x.status = 'cancelled'; });
+  var prev = {};
+  S.mine.requests.forEach(function (x) { if (x.id === id) { prev[id] = x.status; x.status = 'cancelled'; } });
   renderMine();
-  api('cancelRequest', { id: id }).then(function (r) { if (r.ok) applyMine(r); else loadMine(); });
+  api('cancelRequest', { id: id }).then(function (r) {
+    if (r.ok) return applyMine(r);
+    S.mine.requests.forEach(function (x) { if (x.id === id && prev[id]) x.status = prev[id]; });
+    renderMine();
+    $('mineList').insertAdjacentHTML('afterbegin', '<div class="msg err">' + esc(r.message) + '</div>');
+  });
 });
 
 /* ---- מנהל ---- */
@@ -396,6 +403,14 @@ function renderAdmin() {
       '<button class="btn bad sm" type="button" data-act="reject">דחה</button></div></div>';
   }).join('') : '<p class="muted" style="margin:8px 0">אין בקשות ממתינות.</p>';
 
+  var canc = d.requests.filter(function (r) { return r.status === 'cancelled' && r.carId && r.toDate >= today; }).sort(function (a, b) { return a.fromDate < b.fromDate ? -1 : 1; });
+  show($('cancCard'), canc.length > 0);
+  $('cancList').innerHTML = canc.map(function (q) {
+    var c = carById(q.carId);
+    return '<div class="arow"><div class="c"><b>' + esc(q.userName) + '</b><span class="muted">' + esc(q.destination) + (q.project ? ' · פרויקט ' + esc(q.project) : '') + '</span></div>' +
+      '<div class="c"><b style="font-weight:500">' + range(q.fromDate, q.toDate) + ' · ' + dayName(q.fromDate) + '</b><span class="muted">בוטל ' + esc(q.decidedAt) + '</span></div>' +
+      '<div class="c"><span class="pill p-cancelled" style="align-self:flex-start">' + esc(c ? c.name : '') + ' התפנה</span></div></div>';
+  }).join('');
   $('apprList').innerHTML = appr.length ? appr.slice(0, 30).map(function (q) {
     var c = carById(q.carId);
     return '<div class="arow" data-id="' + q.id + '">' +
