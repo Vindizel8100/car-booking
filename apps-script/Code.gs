@@ -234,6 +234,31 @@ function runs(list) {
   return out;
 }
 
+/* החלפת רכב לנסיעה מאושרת. אם הרכב החדש תפוס באותם ימים, הנהג השני מקבל את הרכב הקודם */
+function swapCar(me, r, car) {
+  var q = r.data, oldCar = q.carId, newCar = car.data.id;
+  if (q.status !== 'approved') return { ok: false, message: 'אפשר להחליף רכב רק בנסיעה מאושרת' };
+  if (oldCar === newCar) return { ok: false, message: 'זה כבר הרכב של הנסיעה הזאת' };
+  var all = readRows('Requests');
+  var overlap = function (a, b) { return a.fromDate <= b.toDate && a.toDate >= b.fromDate; };
+  var others = all.filter(function (x) { return x.id !== q.id && x.status === 'approved' && x.carId === newCar && overlap(x, q); });
+  var otherIds = {}; others.forEach(function (x) { otherIds[x.id] = 1; });
+  for (var i = 0; i < others.length; i++) {
+    var x = others[i];
+    var blocked = all.filter(function (y) { return y.id !== q.id && !otherIds[y.id] && y.status === 'approved' && y.carId === oldCar && overlap(y, x); });
+    if (blocked.length) {
+      var oc = findRow('Cars', 'id', oldCar);
+      return { ok: false, message: 'אי אפשר להחליף: ' + x.userName + ' צריך את ' + car.data.name + ' גם ב-' + x.fromDate + '–' + x.toDate + ', ו' + (oc ? oc.data.name : 'הרכב הקודם') + ' תפוס אז אצל ' + blocked[0].userName };
+    }
+  }
+  updateRow('Requests', r.row, { carId: newCar, decidedAt: nowStr(), decidedBy: me.name });
+  others.forEach(function (x) {
+    var xr = findRow('Requests', 'id', x.id);
+    updateRow('Requests', xr.row, { carId: oldCar, decidedAt: nowStr(), decidedBy: me.name });
+  });
+  return { ok: true, swapped: others.map(function (x) { return x.userName; }) };
+}
+
 function adminData() {
   var reqs = readRows('Requests');
   var cutoff = Utilities.formatDate(new Date(Date.now() - 60 * 86400000), tz(), 'yyyy-MM-dd');
@@ -255,6 +280,7 @@ function decide(me, q) {
   }
   var car = findRow('Cars', 'id', q.carId);
   if (!car || car.data.active !== 'yes') return { ok: false, message: 'יש לבחור רכב' };
+  if (q.decision === 'swap') return swapCar(me, r, car);
   var clash = readRows('Requests').filter(function (x) {
     return x.id !== q.id && x.status === 'approved' && x.carId === q.carId &&
       x.fromDate <= r.data.toDate && x.toDate >= r.data.fromDate;
