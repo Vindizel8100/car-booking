@@ -90,7 +90,8 @@ function handle(req) {
     updateCar: function () { return updateCar(req); },
     removeCar: function () { return removeCar(req.id); },
     assignCars: function () { return assignCars(me, req.changes); },
-    adminCreate: function () { return adminCreate(me, req); }
+    adminCreate: function () { return adminCreate(me, req); },
+    adminEdit: function () { return adminEdit(me, req); }
   };
   if (!fns[a]) return { ok: false, message: 'פעולה לא מוכרת' };
   res = withLock(fns[a]);
@@ -257,6 +258,31 @@ function adminCreate(me, q) {
     departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), notes: clip(q.notes, 300),
     status: carId ? 'approved' : 'pending', carId: carId, adminNote: clip(q.adminNote, 200),
     createdAt: nowStr(), decidedAt: carId ? nowStr() : '', decidedBy: carId ? me.name : ''
+  });
+  return { ok: true };
+}
+
+/* המזכירה עורכת נסיעה קיימת: תאריכים, שעה, יעד, פרויקט, הערות ורכב */
+function adminEdit(me, q) {
+  var r = findRow('Requests', 'id', q.id);
+  if (!r) return { ok: false, message: 'הנסיעה לא נמצאה' };
+  if (r.data.status !== 'approved' && r.data.status !== 'pending') return { ok: false, message: 'אפשר לערוך רק נסיעה מאושרת או ממתינה' };
+  var from = cleanDate(q.fromDate), to = cleanDate(q.toDate) || from;
+  if (!from) return { ok: false, message: 'יש לבחור תאריך' };
+  if (to < from) return { ok: false, message: 'תאריך הסיום לפני תאריך ההתחלה' };
+  var dest = clip(q.destination, 120);
+  if (!dest) return { ok: false, message: 'יש למלא לאן הנסיעה' };
+  var carId = String(q.carId || '');
+  if (carId) {
+    var car = findRow('Cars', 'id', carId);
+    if (!car || car.data.active !== 'yes') return { ok: false, message: 'הרכב לא נמצא' };
+    var clash = readRows('Requests').filter(function (x) { return x.id !== q.id && x.status === 'approved' && x.carId === carId && x.fromDate <= to && x.toDate >= from; });
+    if (clash.length) return { ok: false, message: car.data.name + ' כבר משובץ ל' + clash[0].userName + ' בתאריכים האלה' };
+  }
+  updateRow('Requests', r.row, {
+    fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest,
+    project: clip(q.project, 40), notes: clip(q.notes, 300), adminNote: clip(q.adminNote, 200),
+    carId: carId, status: carId ? 'approved' : 'pending', decidedAt: nowStr(), decidedBy: me.name
   });
   return { ok: true };
 }
