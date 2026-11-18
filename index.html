@@ -89,6 +89,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 .center{display:flex;justify-content:center;padding:30px;color:var(--muted)}
 .check{display:flex;align-items:center;gap:10px;min-height:44px;font-size:15px;color:var(--muted)}
 .check input{width:20px;height:20px}
+@media (max-width:640px){#tabs{order:3;flex-basis:100%}.title b{font-size:18px}}
 @media (max-width:420px){.row2{grid-template-columns:1fr}}
 </style>
 </head>
@@ -223,7 +224,8 @@ function msg(el, text, good) {
 function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function parse(s) { var p = s.split('-'); return new Date(+p[0], p[1] - 1, +p[2]); }
 function dm(s) { if (!s) return ''; var p = s.split('-'); return +p[2] + '.' + +p[1]; }
-function range(a, b) { return a === b || !b ? dm(a) : dm(a) + '–' + dm(b); }
+function ltr(t) { return '\u2066' + t + '\u2069'; }
+function range(a, b) { return ltr(a === b || !b ? dm(a) : dm(a) + '–' + dm(b)); }
 var DAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 function dayName(s) { return 'יום ' + DAYS[parse(s).getDay()]; }
 var ST = { pending: 'ממתין לאישור', approved: 'אושר', rejected: 'נדחה', cancelled: 'בוטל' };
@@ -348,7 +350,7 @@ function renderAdmin() {
   var busy = function (day) { return appr.filter(function (r) { return r.fromDate <= day && r.toDate >= day; }).length; };
   var nCars = carsActive().length;
   $('stats').innerHTML = '<div class="stat"><span class="muted">ממתינות לאישור</span><b style="color:var(--warn)">' + pend.length + '</b></div>' +
-    '<div class="stat"><span class="muted">רכבים בשטח היום</span><b>' + busy(today) + ' / ' + nCars + '</b></div>' +
+    '<div class="stat"><span class="muted">רכבים בשטח היום</span><b>' + ltr(busy(today) + ' / ' + nCars) + '</b></div>' +
     '<div class="stat"><span class="muted">פנויים מחר</span><b style="color:var(--ok)">' + Math.max(0, nCars - busy(tom)) + '</b></div>';
 
   $('pendList').innerHTML = pend.length ? pend.map(function (q) {
@@ -393,7 +395,7 @@ $('apprList').addEventListener('click', onRowAction);
 function renderBoard() {
   var base = new Date(); base.setHours(0, 0, 0, 0); base.setDate(base.getDate() - base.getDay() + S.week * 7);
   var days = []; for (var i = 0; i < 5; i++) { var x = new Date(base); x.setDate(base.getDate() + i); days.push(iso(x)); }
-  $('weekTitle').textContent = 'שבוע ' + dm(days[0]) + '–' + dm(days[4]);
+  $('weekTitle').textContent = 'שבוע ' + ltr(dm(days[0]) + '–' + dm(days[4]));
   var reqs = S.data.requests;
   var h = '<div></div>' + days.map(function (d, i) { return '<div class="gh">' + DAYS[i] + ' ' + dm(d) + '</div>'; }).join('');
   carsActive().forEach(function (c) {
