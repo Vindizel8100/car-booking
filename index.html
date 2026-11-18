@@ -127,6 +127,19 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
   </div>
 </header>
 
+<!-- הודעה על עדכונים מהמזכירה -->
+<div id="notice" class="hidden" role="alertdialog" aria-labelledby="noticeTitle" style="position:fixed;inset:0;background:rgba(22,32,42,.45);z-index:20;display:flex;align-items:flex-start;justify-content:center;padding:70px 16px 16px">
+  <div class="card stack" style="max-width:480px;width:100%;gap:12px">
+    <h2 id="noticeTitle" style="margin:0">עדכון בנסיעות שלך</h2>
+    <div id="noticeList" class="stack" style="gap:10px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" type="button" id="noticeOk">הבנתי</button>
+      <button class="btn ghost" type="button" id="noticeGo">להבקשות שלי</button>
+      <button class="btn ghost hidden" type="button" id="noticePerm">קבל התראות גם כשהאתר ברקע</button>
+    </div>
+  </div>
+</div>
+
 <!-- עובד: בקשה חדשה -->
 <section id="vNew" class="wrap hidden">
   <form id="newForm" class="stack">
@@ -216,7 +229,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-18-12';
+var APP_VERSION = '2026-11-18-13';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -247,7 +260,7 @@ function api(action, body) {
 /* מקבלים נתונים רק אם הם חדשים יותר ממה שכבר מוצג */
 function fresh(r) { if (!r._seq || r._seq < appliedSeq) return false; appliedSeq = r._seq; return true; }
 function applyAdmin(r) { if (r && r.data && fresh(r)) { S.data = r.data; renderAdmin(); } }
-function applyMine(r) { if (r && r.mine) { if (fresh(r)) { S.mine = r.mine; renderMine(); } } else loadMine(); }
+function applyMine(r) { if (r && r.mine) { if (fresh(r)) { S.mine = r.mine; renderMine(); checkNotices(S.mine.requests); } } else loadMine(); }
 
 function msg(el, text, good) {
   if (!text) { show(el, false); return; }
@@ -295,6 +308,7 @@ function start() {
     : [['new', 'בקשה חדשה'], ['mine', 'הבקשות שלי']];
   $('tabs').innerHTML = tabs.map(function (t) { return '<button type="button" class="tab" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
   go(S.role === 'admin' ? 'req' : 'new');
+  if (S.role !== 'admin') loadMine();
 }
 $('tabs').addEventListener('click', function (e) { var v = e.target.getAttribute('data-v'); if (v) go(v); });
 
@@ -351,7 +365,7 @@ function loadMine() {
   if (!S.mine) $('mineList').innerHTML = '<div class="center"><span class="spin"></span></div>';
   api('myRequests').then(function (r) {
     if (!r.ok) { if (!S.mine) $('mineList').innerHTML = '<div class="msg err">' + esc(r.message) + '</div>'; return; }
-    if (fresh(r)) { S.mine = { requests: r.requests, cars: r.cars }; renderMine(); }
+    if (fresh(r)) { S.mine = { requests: r.requests, cars: r.cars }; renderMine(); checkNotices(S.mine.requests); }
   });
 }
 function dateList(a, b) {
@@ -361,6 +375,50 @@ function dateList(a, b) {
 }
 function futureDays(q) { var t = iso(new Date()); return dateList(q.fromDate, q.toDate).filter(function (d) { return d >= t; }); }
 function canCancel(q) { return !q.sending && (q.status === 'pending' || q.status === 'approved') && q.toDate >= iso(new Date()); }
+/* ---- התראות לעובד על שינויים שעשתה המזכירה ---- */
+function sig(q) { return [q.status, q.carId, q.fromDate, q.toDate, q.departTime, q.destination, q.project].join('|'); }
+function seenKey() { return 'cb_seen_' + S.name; }
+function loadSeen() { try { return JSON.parse(localStorage.getItem(seenKey()) || 'null'); } catch (e) { return null; } }
+function saveSeen(list) { var m = {}; list.forEach(function (q) { if (!q.sending) m[q.id] = sig(q); }); try { localStorage.setItem(seenKey(), JSON.stringify(m)); } catch (e) {} }
+var pendingNotice = null;
+function checkNotices(list) {
+  if (S.role !== 'user') return;
+  var seen = loadSeen();
+  if (!seen) { saveSeen(list); return; }
+  var cars = {}; (S.mine.cars || []).forEach(function (c) { cars[c.id] = c.name; });
+  var items = [];
+  list.forEach(function (q) {
+    if (q.sending || !q.decidedBy || q.decidedBy === S.name) return;
+    var old = seen[q.id];
+    if (old === sig(q)) return;
+    var when = range(q.fromDate, q.toDate) + ' · ' + q.destination, car = cars[q.carId] ? ' – ' + cars[q.carId] : '';
+    var o = old ? old.split('|') : null;
+    var text;
+    if (!o) text = q.status === 'approved' ? 'נוספה לך נסיעה: ' + when + car : null;
+    else if (o[0] !== q.status) text = q.status === 'approved' ? 'הבקשה אושרה: ' + when + car : q.status === 'rejected' ? 'הבקשה נדחתה: ' + when : q.status === 'cancelled' ? 'הנסיעה בוטלה: ' + when : q.status === 'pending' ? 'הנסיעה הוחזרה להמתנה: ' + when : null;
+    else {
+      var ch = [];
+      if (o[2] !== q.fromDate || o[3] !== q.toDate) ch.push('תאריכים: ' + range(o[2], o[3]) + ' ← ' + range(q.fromDate, q.toDate));
+      if (o[1] !== q.carId) ch.push('רכב: ' + (cars[o[1]] || '—') + ' ← ' + (cars[q.carId] || '—'));
+      if (o[4] !== q.departTime) ch.push('שעת יציאה: ' + q.departTime);
+      if (o[5] !== q.destination) ch.push('יעד: ' + q.destination);
+      if (o[6] !== q.project) ch.push('פרויקט: ' + q.project);
+      text = ch.length ? 'הנסיעה עודכנה (' + when + '): ' + ch.join(' · ') : null;
+    }
+    if (text) items.push({ text: text, note: q.adminNote });
+  });
+  if (!items.length) { saveSeen(list); return; }
+  pendingNotice = list;
+  $('noticeList').innerHTML = items.map(function (it) { return '<div class="msg good" style="color:var(--ink)">' + esc(it.text) + (it.note ? '<div class="muted">הערת המזכירה: ' + esc(it.note) + '</div>' : '') + '</div>'; }).join('');
+  show($('noticePerm'), 'Notification' in window && Notification.permission === 'default');
+  show($('notice'), true);
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    try { new Notification('עדכון בנסיעות שלך', { body: items.map(function (i) { return i.text; }).join('\n') }); } catch (e) {}
+  }
+}
+$('noticeOk').addEventListener('click', function () { if (pendingNotice) saveSeen(pendingNotice); pendingNotice = null; show($('notice'), false); });
+$('noticeGo').addEventListener('click', function () { if (pendingNotice) saveSeen(pendingNotice); pendingNotice = null; show($('notice'), false); go('mine'); });
+$('noticePerm').addEventListener('click', function () { try { Notification.requestPermission().then(function () { show($('noticePerm'), false); }); } catch (e) {} });
 function renderMine() {
   var el = $('mineList'), r = S.mine;
   var cars = {}; r.cars.forEach(function (c) { cars[c.id] = c; });
@@ -825,6 +883,9 @@ $('cForm').addEventListener('submit', function (e) {
   });
 });
 
+/* רענון אוטומטי לעובד כל דקה, כדי שיראה עדכונים מהמזכירה */
+setInterval(function () { if (S.token && S.role !== 'admin' && !document.hidden && !S.daysOpen) loadMine(); }, 60000);
+document.addEventListener('visibilitychange', function () { if (!document.hidden && S.token && S.role !== 'admin') loadMine(); });
 /* רענון אוטומטי למזכירה כל דקה */
 setInterval(function () { if (S.token && S.role === 'admin' && !document.hidden && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement||{}).tagName||'') && !S.editTrip && $('mForm').classList.contains('hidden') && S.view !== 'users' && S.view !== 'cars') loadAdmin(); }, 60000);
 
