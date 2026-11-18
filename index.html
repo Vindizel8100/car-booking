@@ -189,7 +189,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
       </div>
       <button class="btn" type="submit">הוסף רכב</button>
     </form>
-    <div class="card"><h2>רכבי המחלקה</h2><table class="t"><thead><tr><th>שם</th><th>מספר רישוי</th><th></th></tr></thead><tbody id="cList"></tbody></table></div>
+    <div class="card"><div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">רכבי המחלקה</h2><button class="btn ok sm" type="button" id="cSaveAll" disabled>שמור הכל</button></div><table class="t"><thead><tr><th>שם</th><th>מספר רישוי</th><th></th></tr></thead><tbody id="cList"></tbody></table></div>
   </div>
 </section>
 
@@ -502,19 +502,57 @@ $('uForm').addEventListener('submit', function (e) {
   });
 });
 
+/* שינויים שעוד לא נשמרו נשמרים כאן, כדי שלא יימחקו כשהרשימה מתרעננת */
+var carDraft = {};
 function renderCars() {
+  var ids = {};
   $('cList').innerHTML = carsActive().map(function (c) {
-    return '<tr data-id="' + c.id + '"><td><input class="i" data-n value="' + esc(c.name) + '" aria-label="שם הרכב" style="min-height:44px"></td><td><input class="i" data-p value="' + esc(c.plate) + '" aria-label="מספר רישוי" style="min-height:44px"></td>' +
-      '<td style="text-align:left;white-space:nowrap"><button class="btn ghost sm" type="button" data-save>שמור</button> <button class="btn bad sm" type="button" data-rm>הסר</button></td></tr>';
+    ids[c.id] = 1;
+    var d = carDraft[c.id], name = d ? d.name : c.name, plate = d ? d.plate : c.plate;
+    return '<tr data-id="' + c.id + '"' + (d ? ' style="background:var(--warn-bg)"' : '') + '><td><input class="i" data-n value="' + esc(name) + '" aria-label="שם הרכב" style="min-height:44px"></td><td><input class="i" data-p value="' + esc(plate) + '" aria-label="מספר רישוי" style="min-height:44px"></td>' +
+      '<td style="text-align:left;white-space:nowrap"><button class="btn bad sm" type="button" data-rm>הסר</button></td></tr>';
   }).join('');
+  Object.keys(carDraft).forEach(function (id) { if (!ids[id]) delete carDraft[id]; });
+  updateSaveAll();
 }
+function updateSaveAll() {
+  var n = Object.keys(carDraft).length, b = $('cSaveAll');
+  b.disabled = n === 0;
+  b.textContent = n ? 'שמור הכל (' + n + ')' : 'שמור הכל';
+}
+$('cList').addEventListener('input', function (e) {
+  var tr = e.target.closest('tr'); if (!tr) return; var id = tr.getAttribute('data-id');
+  var c = carById(id); if (!c) return;
+  var name = tr.querySelector('[data-n]').value, plate = tr.querySelector('[data-p]').value;
+  if (name === c.name && plate === c.plate) { delete carDraft[id]; tr.style.background = ''; }
+  else { carDraft[id] = { name: name, plate: plate }; tr.style.background = 'var(--warn-bg)'; }
+  updateSaveAll();
+});
+$('cSaveAll').addEventListener('click', function () {
+  var ids = Object.keys(carDraft); if (!ids.length) return;
+  for (var k = 0; k < ids.length; k++) if (!carDraft[ids[k]].name.trim()) return msg($('aMsg'), 'לכל רכב צריך להיות שם');
+  var b = this; b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+  var errors = [], last = null;
+  ids.reduce(function (p, id) {
+    return p.then(function () {
+      var d = carDraft[id];
+      return api('updateCar', { id: id, name: d.name, plate: d.plate }).then(function (r) {
+        if (r.ok) delete carDraft[id]; else errors.push((d.name || id) + ': ' + r.message);
+        if (r.data) last = r;
+      });
+    });
+  }, Promise.resolve()).then(function () {
+    msg($('aMsg'), errors.length ? 'חלק מהרכבים לא נשמרו. ' + errors.join(' · ') : (ids.length === 1 ? 'הרכב נשמר' : 'כל ' + ids.length + ' הרכבים נשמרו'), !errors.length);
+    if (last) applyAdmin(last); else loadAdmin();
+    updateSaveAll();
+  });
+});
 $('cList').addEventListener('click', function (e) {
   var tr = e.target.closest('tr'); if (!tr) return; var id = tr.getAttribute('data-id');
-  if (e.target.hasAttribute('data-save')) {
-    api('updateCar', { id: id, name: tr.querySelector('[data-n]').value, plate: tr.querySelector('[data-p]').value }).then(function (r) { msg($('aMsg'), r.ok ? 'הרכב עודכן' : r.message, r.ok); if (r.data) applyAdmin(r); else loadAdmin(); });
-  }
   if (e.target.hasAttribute('data-rm')) {
     if (e.target.getAttribute('data-sure') !== '1') { e.target.setAttribute('data-sure', '1'); e.target.textContent = 'להסיר? לחץ שוב'; return; }
+    e.target.disabled = true;
+    delete carDraft[id];
     api('removeCar', { id: id }).then(function (r) { msg($('aMsg'), r.ok ? 'הרכב הוסר' : r.message, r.ok); if (r.data) applyAdmin(r); else loadAdmin(); });
   }
 });
