@@ -12,6 +12,7 @@ var MAX_FAILS = 5;
 var SHEETS = {
   Users: ['name', 'passHash', 'role', 'createdAt'],
   Cars: ['id', 'name', 'plate', 'active'],
+  Maintenance: ['id', 'carId', 'fromDate', 'toDate', 'note', 'createdBy'],
   Requests: ['id', 'userName', 'fromDate', 'toDate', 'departTime', 'destination', 'project', 'notes',
              'status', 'carId', 'adminNote', 'createdAt', 'decidedAt', 'decidedBy']
 };
@@ -68,6 +69,7 @@ function handle(req) {
 
   if (a === 'me') return { ok: true, name: me.name, role: me.role };
   if (a === 'myRequests') return { ok: true, requests: myRequests(me.name), cars: activeCars() };
+  if (a === 'board') return boardData();
 
   var res;
   if (a === 'createRequest') res = withLock(function () { return createRequest(me, req); });
@@ -91,12 +93,14 @@ function handle(req) {
     removeCar: function () { return removeCar(req.id); },
     assignCars: function () { return assignCars(me, req.changes); },
     adminCreate: function () { return adminCreate(me, req); },
-    adminEdit: function () { return adminEdit(me, req); }
+    adminEdit: function () { return adminEdit(me, req); },
+    addMaint: function () { return addMaint(me, req); },
+    removeMaint: function () { return removeMaint(req.id); }
   };
   if (!fns[a]) return { ok: false, message: 'פעולה לא מוכרת' };
   res = withLock(fns[a]);
   var d = adminData();
-  res.data = { requests: d.requests, cars: d.cars, users: d.users };
+  res.data = { requests: d.requests, cars: d.cars, users: d.users, maint: d.maint };
   return res;
 }
 
@@ -252,6 +256,8 @@ function adminCreate(me, q) {
     if (!car || car.data.active !== 'yes') return { ok: false, message: 'הרכב לא נמצא' };
     var clash = readRows('Requests').filter(function (x) { return x.status === 'approved' && x.carId === carId && x.fromDate <= to && x.toDate >= from; });
     if (clash.length) return { ok: false, message: car.data.name + ' כבר משובץ ל' + clash[0].userName + ' בתאריכים האלה' };
+    var mt = maintClash(carId, from, to);
+    if (mt) return { ok: false, message: maintMsg(car.data.name, mt) };
   }
   appendRow('Requests', {
     id: newId(), userName: user.name, fromDate: from, toDate: to,
@@ -278,6 +284,8 @@ function adminEdit(me, q) {
     if (!car || car.data.active !== 'yes') return { ok: false, message: 'הרכב לא נמצא' };
     var clash = readRows('Requests').filter(function (x) { return x.id !== q.id && x.status === 'approved' && x.carId === carId && x.fromDate <= to && x.toDate >= from; });
     if (clash.length) return { ok: false, message: car.data.name + ' כבר משובץ ל' + clash[0].userName + ' בתאריכים האלה' };
+    var mt = maintClash(carId, from, to);
+    if (mt) return { ok: false, message: maintMsg(car.data.name, mt) };
   }
   updateRow('Requests', r.row, {
     fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest,
@@ -310,6 +318,10 @@ function assignCars(me, changes) {
     var p = appr[a], q = appr[b];
     if (p.carId === q.carId && p.fromDate <= q.toDate && p.toDate >= q.fromDate)
       return { ok: false, message: cars[p.carId].name + ' משובץ גם ל' + p.userName + ' וגם ל' + q.userName + ' באותם ימים. תקן ונסה שוב' };
+  }
+  for (var k = 0; k < changes.length; k++) {
+    var xc = byId[changes[k].id], mt = maintClash(xc.carId, xc.fromDate, xc.toDate);
+    if (mt) return { ok: false, message: maintMsg(cars[xc.carId].name, mt) + ' – בנסיעה של ' + xc.userName };
   }
   changes.forEach(function (ch) {
     var r = findRow('Requests', 'id', ch.id);
@@ -344,12 +356,49 @@ function swapCar(me, r, car) {
   return { ok: true, swapped: others.map(function (x) { return x.userName; }) };
 }
 
+/* ---------- רכב בטיפול ---------- */
+function maintList() {
+  var cutoff = Utilities.formatDate(new Date(Date.now() - 60 * 86400000), tz(), 'yyyy-MM-dd');
+  return readRows('Maintenance').filter(function (m) { return m.toDate >= cutoff; });
+}
+/* מחזיר את הטיפול שחופף לתאריכים, אם יש */
+function maintClash(carId, from, to) {
+  var m = readRows('Maintenance').filter(function (x) { return x.carId === carId && x.fromDate <= to && x.toDate >= from; });
+  return m.length ? m[0] : null;
+}
+function maintMsg(carName, m) { return carName + ' בטיפול ב-' + m.fromDate + (m.toDate !== m.fromDate ? '–' + m.toDate : '') + (m.note ? ' (' + m.note + ')' : ''); }
+function addMaint(me, q) {
+  var car = findRow('Cars', 'id', q.carId);
+  if (!car || car.data.active !== 'yes') return { ok: false, message: 'יש לבחור רכב' };
+  var from = cleanDate(q.fromDate), to = cleanDate(q.toDate) || from;
+  if (!from) return { ok: false, message: 'יש לבחור תאריך' };
+  if (to < from) return { ok: false, message: 'תאריך הסיום לפני תאריך ההתחלה' };
+  var busy = readRows('Requests').filter(function (x) { return x.status === 'approved' && x.carId === q.carId && x.fromDate <= to && x.toDate >= from; });
+  if (busy.length && !q.force) return { ok: false, needForce: true, message: car.data.name + ' משובץ בימים האלה ל' + busy.map(function (x) { return x.userName + ' (' + x.fromDate + ')'; }).join(', ') + '. כדאי להעביר אותם לרכב אחר' };
+  appendRow('Maintenance', { id: 'm' + Date.now().toString(36), carId: q.carId, fromDate: from, toDate: to, note: clip(q.note, 100), createdBy: me.name });
+  return { ok: true };
+}
+function removeMaint(id) {
+  var r = findRow('Maintenance', 'id', id);
+  if (!r) return { ok: false, message: 'הטיפול לא נמצא' };
+  sheet('Maintenance').deleteRow(r.row);
+  return { ok: true };
+}
+
+/* לוח רכבים לעובדים: רק נסיעות מאושרות, בלי פרטים אישיים מעבר לשם ויעד */
+function boardData() {
+  var cutoff = Utilities.formatDate(new Date(Date.now() - 60 * 86400000), tz(), 'yyyy-MM-dd');
+  var reqs = readRows('Requests').filter(function (r) { return r.status === 'approved' && r.toDate >= cutoff; })
+    .map(function (r) { return { id: r.id, userName: r.userName, carId: r.carId, fromDate: r.fromDate, toDate: r.toDate, destination: r.destination, status: r.status }; });
+  return { ok: true, requests: reqs, cars: activeCars(), maint: maintList() };
+}
+
 function adminData() {
   var reqs = readRows('Requests');
   var cutoff = Utilities.formatDate(new Date(Date.now() - 60 * 86400000), tz(), 'yyyy-MM-dd');
   reqs = reqs.filter(function (r) { return r.status === 'pending' || r.toDate >= cutoff; });
   var users = readRows('Users').map(function (u) { return { name: u.name, role: u.role }; });
-  return { ok: true, requests: reqs, cars: readRows('Cars'), users: users };
+  return { ok: true, requests: reqs, cars: readRows('Cars'), users: users, maint: maintList() };
 }
 
 function decide(me, q) {
@@ -371,6 +420,8 @@ function decide(me, q) {
       x.fromDate <= r.data.toDate && x.toDate >= r.data.fromDate;
   });
   if (clash.length) return { ok: false, message: car.data.name + ' כבר משובץ ל' + clash[0].userName + ' בתאריכים האלה' };
+  var mt = maintClash(q.carId, r.data.fromDate, r.data.toDate);
+  if (mt) return { ok: false, message: maintMsg(car.data.name, mt) };
   updateRow('Requests', r.row, { status: 'approved', carId: q.carId, adminNote: clip(q.note, 200), decidedAt: nowStr(), decidedBy: me.name });
   return { ok: true };
 }
@@ -452,7 +503,16 @@ function removeCar(id) {
 
 /* ---------- עזרי גיליון ---------- */
 
-function sheet(name) { return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name); }
+function sheet(name) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(name);
+  if (!sh) { // לשונית חדשה (למשל טיפולים) נוצרת אוטומטית בפעם הראשונה
+    sh = ss.insertSheet(name);
+    sh.getRange(1, 1, 1, SHEETS[name].length).setValues([SHEETS[name]]).setFontWeight('bold');
+    sh.getRange('A:Z').setNumberFormat('@');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
 
 function cellStr(v, key) {
   if (v instanceof Date) {
