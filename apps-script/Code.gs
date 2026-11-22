@@ -1,3 +1,4 @@
+/** @OnlyCurrentDoc */
 /**
  * מערכת שריון רכבי מחלקה — צד שרת (Google Apps Script)
  * הנתונים נשמרים בגיליון שאליו הסקריפט מחובר.
@@ -9,7 +10,6 @@
    הסיסמה שלו נשמרת מוצפנת ב"מאפייני הסקריפט". כדי להחליף אותה: לכתוב סיסמה חדשה ב-NEW_MASTER_PASSWORD
    בפונקציה setMasterPassword למטה, להריץ אותה פעם אחת מהעורך, ואז למחוק את הסיסמה מהקוד. */
 var INITIAL_ADMIN_NAME = 'מנהל';
-var INITIAL_ADMIN_PASSWORD = 'CHANGE_ME'; // הסיסמה ההתחלתית של משתמש הגיבוי, עד שמחליפים אותה
 var TOKEN_DAYS = 30;
 var MAX_FAILS = 5;
 
@@ -590,9 +590,8 @@ function findRow(name, key, value) {
 
 function isMaster(name) { return normName(name) === INITIAL_ADMIN_NAME; }
 function masterHash() {
-  var props = PropertiesService.getScriptProperties(), h = props.getProperty('MASTER_HASH');
-  if (!h) { h = hashPass(INITIAL_ADMIN_PASSWORD); props.setProperty('MASTER_HASH', h); }
-  return h;
+  // אין סיסמת ברירת מחדל: אם לא הוגדרה סיסמה עם setMasterPassword, משתמש הגיבוי חסום
+  return PropertiesService.getScriptProperties().getProperty('MASTER_HASH') || '!disabled';
 }
 function findUser(name) {
   if (isMaster(name)) return { name: INITIAL_ADMIN_NAME, passHash: masterHash(), role: 'admin' };
