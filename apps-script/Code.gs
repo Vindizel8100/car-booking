@@ -434,6 +434,7 @@ function decide(me, q) {
   var r = findRow('Requests', 'id', q.id);
   if (!r) return { ok: false, message: 'הבקשה לא נמצאה' };
   if (q.decision === 'reject') {
+    if (!clip(q.note, 200)) return { ok: false, message: 'יש לכתוב סיבה לדחייה' };
     updateRow('Requests', r.row, { status: 'rejected', carId: '', adminNote: clip(q.note, 200), decidedAt: nowStr(), decidedBy: me.name });
     notify(r.data.userName, 'עדכון בבקשת הרכב', 'הבקשה נדחתה: ' + tripTxt(r.data) + (q.note ? ' · ' + clip(q.note, 200) : ''));
     return { ok: true };
