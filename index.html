@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="רכבי מחלקה">
 <title>שריון רכבי מחלקה</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%231F5FBF'/%3E%3Cpath d='M5 16h14v-4l-2-4.5H7L5 12v4z' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
@@ -133,6 +135,9 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
   </div>
 </header>
 
+<!-- התראות לטלפון -->
+<div id="pushBar" class="wrap wide hidden" style="padding-bottom:0"></div>
+
 <!-- הודעה על עדכונים מהמזכירה -->
 <div id="notice" class="hidden" role="alertdialog" aria-labelledby="noticeTitle" style="position:fixed;inset:0;background:rgba(22,32,42,.45);z-index:20;display:flex;align-items:flex-start;justify-content:center;padding:70px 16px 16px">
   <div class="card stack" style="max-width:480px;width:100%;gap:12px">
@@ -253,7 +258,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-18-16';
+var APP_VERSION = '2026-11-22-1';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -318,6 +323,9 @@ $('loginForm').addEventListener('submit', function (e) {
 });
 
 function logout() {
+  var oldToken = S.token;
+  getSub().then(function (s) { if (s && oldToken) fetch(API, { method: 'POST', body: JSON.stringify({ action: 'pushUnsubscribe', endpoint: s.endpoint, token: oldToken }) }).catch(function () {}); });
+  tokenForSW(null); show($('pushBar'), false);
   S.token = null; store('cb_token', null); store('cb_name', null); store('cb_role', null);
   ['topBar', 'vNew', 'vMine', 'vAdmin', 'vBoard', 'loading'].forEach(function (id) { show($(id), false); });
   show($('vLogin'), true);
@@ -331,8 +339,11 @@ function start() {
     ? [['req', 'בקשות'], ['board', 'לוח רכבים'], ['users', 'עובדים'], ['cars', 'רכבים']]
     : [['new', 'בקשה חדשה'], ['mine', 'הבקשות שלי'], ['board', 'לוח רכבים']];
   $('tabs').innerHTML = tabs.map(function (t) { return '<button type="button" class="tab" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
-  go(S.role === 'admin' ? 'req' : 'new');
+  var qv = (location.search.match(/[?&]view=(\w+)/) || [])[1];
+  var allowed = S.role === 'admin' ? ['req', 'board', 'users', 'cars'] : ['new', 'mine', 'board'];
+  go(allowed.indexOf(qv) >= 0 ? qv : (S.role === 'admin' ? 'req' : 'new'));
   if (S.role !== 'admin') loadMine();
+  pushAfterLogin();
 }
 $('tabs').addEventListener('click', function (e) { var v = e.target.getAttribute('data-v'); if (v) go(v); });
 
@@ -1010,6 +1021,82 @@ document.addEventListener('input', refreshDates, true);
 document.addEventListener('change', refreshDates, true);
 setInterval(refreshDates, 300);
 enhanceDates(); refreshDates();
+
+/* ---- התראות לטלפון (Web Push) ---- */
+var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+var isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+var swReg = null;
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (r) { swReg = r; renderPushBar(); }).catch(function () {});
+  navigator.serviceWorker.addEventListener('message', function (e) {
+    if (e.data && e.data.type === 'open' && S.token) { var v = e.data.view; if (S.role === 'admin' ? v === 'req' : v === 'mine') go(v); }
+  });
+}
+function pushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+function b64ToU8(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; var b = atob(s), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+function tokenForSW(token) {
+  if (!('caches' in window)) return;
+  caches.open('cb-auth').then(function (c) { return token ? c.put('token', new Response(token)) : c.delete('token'); }).catch(function () {});
+}
+function getSub() {
+  if (!pushSupported() || !swReg) return Promise.resolve(null);
+  return swReg.pushManager.getSubscription().catch(function () { return null; });
+}
+function pushState() {
+  if (isIOS && !isStandalone) return Promise.resolve('ios-install');
+  if (!pushSupported()) return Promise.resolve('unsupported');
+  if (Notification.permission === 'denied') return Promise.resolve('denied');
+  return getSub().then(function (s) { return s && Notification.permission === 'granted' ? 'on' : 'off'; });
+}
+function pushDismissed() { try { return +(localStorage.getItem('cb_push_later') || 0) > Date.now(); } catch (e) { return false; } }
+function renderPushBar() {
+  var bar = $('pushBar');
+  if (!S.token) { show(bar, false); return; }
+  pushState().then(function (st) {
+    var admin = S.role === 'admin', html = '';
+    var what = admin ? 'על כל בקשת רכב חדשה ועל ביטולים' : 'כשהבקשה שלך מאושרת, נדחית או משתנה';
+    if (st === 'on') html = '<div class="card" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 16px"><span style="color:var(--ok);font-weight:700">✓ התראות לטלפון פעילות</span><span class="muted" style="flex:1">תקבל התראה ' + what + '</span><button class="btn ghost sm" type="button" id="pushTest">שלח לי התראת ניסיון</button></div>';
+    else if (pushDismissed()) html = '';
+    else if (st === 'off') html = '<div class="card" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--accent-l)"><b style="flex:1 1 220px">🔔 קבל התראה לטלפון ' + what + '</b><button class="btn sm" type="button" id="pushOn">הפעל התראות</button><button class="btn ghost sm" type="button" id="pushLater">לא עכשיו</button></div>';
+    else if (st === 'ios-install') html = '<div class="card stack" style="gap:8px;background:var(--accent-l)"><b>🔔 רוצה התראות לאייפון ' + what + '?</b><span class="muted" style="color:var(--ink)">באייפון צריך קודם להוסיף את האתר למסך הבית: בספארי לחץ על כפתור השיתוף <b>⬆︎</b> ← <b>"הוסף למסך הבית"</b>, ואז פתח את האתר מהאייקון החדש ולחץ שם "הפעל התראות".</span><div><button class="btn ghost sm" type="button" id="pushLater">הבנתי</button></div></div>';
+    else if (st === 'denied') html = '<div class="card" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px"><span class="muted" style="flex:1;color:var(--ink)">ההתראות לאתר הזה חסומות בדפדפן. כדי לקבל התראות: לחץ על סמל המנעול ליד כתובת האתר ← הרשאות ← התראות ← אפשר, ואז רענן.</span><button class="btn ghost sm" type="button" id="pushLater">הסתר</button></div>';
+    bar.innerHTML = html;
+    show(bar, !!html);
+  });
+}
+$('pushBar').addEventListener('click', function (e) {
+  var id = e.target.id;
+  if (id === 'pushLater') { try { localStorage.setItem('cb_push_later', String(Date.now() + 7 * 86400000)); } catch (x) {} renderPushBar(); }
+  if (id === 'pushOn') enablePush(e.target);
+  if (id === 'pushTest') {
+    e.target.disabled = true; e.target.textContent = 'שולח…';
+    api('pushTest').then(function (r) { e.target.disabled = false; e.target.textContent = r.ok ? 'נשלחה ✓ (תוך כמה שניות)' : 'שגיאה – נסה שוב'; });
+  }
+});
+function enablePush(btn) {
+  if (!swReg) { msgTop('הדפדפן עדיין טוען. נסה שוב בעוד רגע'); return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  Notification.requestPermission().then(function (perm) {
+    if (perm !== 'granted') { renderPushBar(); return; }
+    return api('vapidKey').then(function (k) {
+      if (!k.ok) throw new Error(k.message);
+      return swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(k.key) });
+    }).then(function (sub) {
+      tokenForSW(S.token);
+      return api('pushSubscribe', { sub: sub.toJSON() });
+    }).then(function (r) {
+      if (!r.ok) throw new Error(r.message);
+      renderPushBar();
+    });
+  }).catch(function (err) { btn.disabled = false; btn.textContent = 'הפעל התראות'; msgTop('לא הצלחתי להפעיל התראות: ' + (err && err.message || err)); });
+}
+function msgTop(t) { if (S.role === 'admin') { msg($('aMsg'), t); window.scrollTo(0, 0); } else { var m = S.view === 'new' ? $('nMsg') : null; if (m) msg(m, t); else alertless(t); } }
+function alertless(t) { $('pushBar').insertAdjacentHTML('beforeend', '<div class="msg err" style="margin-top:8px">' + esc(t) + '</div>'); show($('pushBar'), true); }
+/* אחרי כניסה: מעדכנים את הטוקן לטלפון, ומקשרים מחדש את המנוי למשתמש הנוכחי */
+function pushAfterLogin() {
+  tokenForSW(S.token);
+  getSub().then(function (s) { if (s && Notification.permission === 'granted') api('pushSubscribe', { sub: s.toJSON() }); renderPushBar(); });
+}
 
 /* ---- הפעלה ---- */
 (function () {
