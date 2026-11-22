@@ -258,7 +258,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-22-1';
+var APP_VERSION = '2026-11-22-3';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -749,7 +749,7 @@ function renderAdmin() {
       '<div class="c"><b style="font-weight:500">' + range(q.fromDate, q.toDate) + ' · ' + dayName(q.fromDate) + '</b><span class="muted">' + (q.departTime ? 'יציאה ' + esc(q.departTime) : '') + '</span></div>' +
       '<div class="c w"><b style="font-weight:500">' + esc(q.destination) + '</b><span class="muted">' + (q.project ? 'פרויקט ' + esc(q.project) : '') + (q.notes ? ' · ' + esc(q.notes) : '') + '</span></div>' +
       '<div class="acts"><label class="f" style="font-size:13px;color:var(--muted)">רכב פנוי<select class="i" data-car>' + opts + '</select></label>' +
-      '<input class="i" data-note placeholder="הערה לעובד (לא חובה)" style="width:190px">' +
+      '<input class="i" data-note placeholder="הערה לעובד (חובה בדחייה)" aria-label="הערה לעובד – חובה כשדוחים" style="width:210px">' +
       '<button class="btn ok sm" type="button" data-act="approve"' + (free.length ? '' : ' disabled') + '>אשר</button>' +
       '<button class="btn bad sm" type="button" data-act="reject">דחה</button></div></div>';
   }).join('') : '<p class="muted" style="margin:8px 0">אין בקשות ממתינות.</p>';
@@ -771,6 +771,11 @@ function onRowAction(e) {
   var act = e.target.getAttribute('data-act'); if (!act) return;
   var row = e.target.closest('.arow'), id = row.getAttribute('data-id');
   var carSel = row.querySelector('[data-car]'), note = row.querySelector('[data-note]');
+  if (act === 'reject' && note && !note.value.trim()) {
+    msg($('aMsg'), 'כדי לדחות בקשה צריך לכתוב סיבה בשדה "הערה לעובד"');
+    note.style.borderColor = 'var(--bad)'; note.style.outline = '2px solid var(--bad)'; note.placeholder = 'כתוב כאן את סיבת הדחייה'; note.focus();
+    return;
+  }
   if (act === 'reject' && e.target.getAttribute('data-sure') !== '1') { e.target.setAttribute('data-sure', '1'); e.target.textContent = 'לדחות? לחץ שוב'; return; }
   var body = { id: id, decision: act, carId: carSel ? carSel.value : '', note: note ? note.value : '' };
   if (act === 'swap') {
@@ -1055,7 +1060,7 @@ function renderPushBar() {
   pushState().then(function (st) {
     var admin = S.role === 'admin', html = '';
     var what = admin ? 'על כל בקשת רכב חדשה ועל ביטולים' : 'כשהבקשה שלך מאושרת, נדחית או משתנה';
-    if (st === 'on') html = '<div class="card" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 16px"><span style="color:var(--ok);font-weight:700">✓ התראות לטלפון פעילות</span><span class="muted" style="flex:1">תקבל התראה ' + what + '</span><button class="btn ghost sm" type="button" id="pushTest">שלח לי התראת ניסיון</button></div>';
+    if (st === 'on') html = '<div class="card" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 16px"><span style="color:var(--ok);font-weight:700">✓ התראות לטלפון פעילות</span><span class="muted" style="flex:1">תקבל התראה ' + what + '</span></div>';
     else if (pushDismissed()) html = '';
     else if (st === 'off') html = '<div class="card" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--accent-l)"><b style="flex:1 1 220px">🔔 קבל התראה לטלפון ' + what + '</b><button class="btn sm" type="button" id="pushOn">הפעל התראות</button><button class="btn ghost sm" type="button" id="pushLater">לא עכשיו</button></div>';
     else if (st === 'ios-install') html = '<div class="card stack" style="gap:8px;background:var(--accent-l)"><b>🔔 רוצה התראות לאייפון ' + what + '?</b><span class="muted" style="color:var(--ink)">באייפון צריך קודם להוסיף את האתר למסך הבית: בספארי לחץ על כפתור השיתוף <b>⬆︎</b> ← <b>"הוסף למסך הבית"</b>, ואז פתח את האתר מהאייקון החדש ולחץ שם "הפעל התראות".</span><div><button class="btn ghost sm" type="button" id="pushLater">הבנתי</button></div></div>';
