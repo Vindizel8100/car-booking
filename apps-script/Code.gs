@@ -17,6 +17,8 @@ var SHEETS = {
   Users: ['name', 'passHash', 'role', 'createdAt'],
   Cars: ['id', 'name', 'plate', 'active'],
   Maintenance: ['id', 'carId', 'fromDate', 'toDate', 'note', 'createdBy'],
+  Subscriptions: ['userName', 'endpoint', 'createdAt'],
+  Notices: ['id', 'userName', 'title', 'text', 'view', 'createdAt', 'delivered'],
   Requests: ['id', 'userName', 'fromDate', 'toDate', 'departTime', 'destination', 'project', 'notes',
              'status', 'carId', 'adminNote', 'createdAt', 'decidedAt', 'decidedBy']
 };
@@ -57,6 +59,7 @@ function doPost(e) {
   try {
     var req = JSON.parse(e.postData.contents || '{}');
     out = handle(req);
+    try { flushNotices(); } catch (e2) {}
   } catch (err) {
     out = { ok: false, error: String(err && err.message || err) };
   }
@@ -66,6 +69,7 @@ function doPost(e) {
 function handle(req) {
   var a = req.action;
   if (a === 'login') return login(req.name, req.pass);
+  if (a === 'vapidKey') return { ok: true, key: vapidKeys().pub };
 
   var me = verifyToken(req.token);
   if (!me) return { ok: false, error: 'AUTH', message: 'יש להתחבר מחדש' };
@@ -73,6 +77,10 @@ function handle(req) {
   if (a === 'me') return { ok: true, name: me.name, role: me.role };
   if (a === 'myRequests') return { ok: true, requests: myRequests(me.name), cars: activeCars() };
   if (a === 'board') return boardData();
+  if (a === 'pushSubscribe') return pushSubscribe(me, req.sub);
+  if (a === 'pushUnsubscribe') return pushUnsubscribe(String(req.endpoint || ''));
+  if (a === 'notices') return takeNotices(me);
+  if (a === 'pushTest') { notify(me.name, 'שריון רכבי מחלקה', 'התראת ניסיון – ההתראות פועלות בטלפון הזה ✓', me.role === 'admin' ? 'req' : 'mine'); return { ok: true }; }
 
   var res;
   if (a === 'createRequest') res = withLock(function () { return createRequest(me, req); });
@@ -176,6 +184,7 @@ function createRequest(me, q) {
     departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), notes: clip(q.notes, 300),
     status: 'pending', carId: '', adminNote: '', createdAt: nowStr(), decidedAt: '', decidedBy: ''
   });
+  notifyAdmins('בקשה חדשה מ' + me.name + ': ' + rangeTxt(from, to) + ' · ' + dest + (q.project ? ' · פרויקט ' + clip(q.project, 40) : ''), me.name);
   return { ok: true };
 }
 
@@ -187,6 +196,8 @@ function cancelRequest(me, id) {
   if (r.data.status === 'approved' && r.data.toDate < today && me.role !== 'admin') return { ok: false, message: 'אי אפשר לבטל נסיעה שכבר עברה' };
   // שומרים את הרכב שהיה משובץ, כדי שהמזכירה תראה איזה רכב התפנה
   updateRow('Requests', r.row, { status: 'cancelled', adminNote: r.data.status === 'approved' ? 'בוטל אחרי אישור' : r.data.adminNote, decidedAt: nowStr(), decidedBy: me.name });
+  if (me.name !== r.data.userName) notify(r.data.userName, 'עדכון בנסיעה שלך', 'הנסיעה בוטלה: ' + tripTxt(r.data));
+  else if (r.data.status === 'approved') notifyAdmins(me.name + ' ביטל נסיעה מאושרת: ' + tripTxt(r.data) + ' – ' + carNameOf(r.data.carId) + ' התפנה', me.name);
   return { ok: true };
 }
 
@@ -220,6 +231,9 @@ function cancelDays(me, id, days) {
     c.adminNote = 'בוטל חלקית'; c.decidedAt = nowStr(); c.decidedBy = me.name;
     appendRow('Requests', c);
   });
+  var daysTxt = dropRuns.map(function (run) { return rangeTxt(run[0], run[1]); }).join(', ');
+  if (me.name !== q.userName) notify(q.userName, 'עדכון בנסיעה שלך', 'בוטלו ימים בנסיעה ל' + q.destination + ': ' + daysTxt);
+  else if (q.status === 'approved') notifyAdmins(me.name + ' ביטל ימים בנסיעה ל' + q.destination + ': ' + daysTxt + ' – ' + carNameOf(q.carId) + ' התפנה בימים האלה', me.name);
   return { ok: true };
 }
 
@@ -269,6 +283,7 @@ function adminCreate(me, q) {
     status: carId ? 'approved' : 'pending', carId: carId, adminNote: clip(q.adminNote, 200),
     createdAt: nowStr(), decidedAt: carId ? nowStr() : '', decidedBy: carId ? me.name : ''
   });
+  if (carId) notify(user.name, 'נוספה לך נסיעה', rangeTxt(from, to) + ' · ' + dest + ' – ' + carNameOf(carId) + (q.departTime ? ' · יציאה ' + clip(q.departTime, 5) : ''));
   return { ok: true };
 }
 
@@ -291,6 +306,12 @@ function adminEdit(me, q) {
     var mt = maintClash(carId, from, to);
     if (mt) return { ok: false, message: maintMsg(car.data.name, mt) };
   }
+  var oldQ = JSON.parse(JSON.stringify(r.data));
+  var newQ = { fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), carId: carId };
+  var ct = changeTxt(oldQ, newQ);
+  if (oldQ.status === 'approved' && !carId) notify(oldQ.userName, 'עדכון בנסיעה שלך', 'הנסיעה הוחזרה להמתנה: ' + tripTxt(newQ));
+  else if (oldQ.status !== 'approved' && carId) notify(oldQ.userName, 'הבקשה אושרה ✓', tripTxt(newQ) + ' – ' + carNameOf(carId));
+  else if (ct && carId) notify(oldQ.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + dest + ': ' + ct);
   updateRow('Requests', r.row, {
     fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest,
     project: clip(q.project, 40), notes: clip(q.notes, 300), adminNote: clip(q.adminNote, 200),
@@ -303,8 +324,8 @@ function adminEdit(me, q) {
 function assignCars(me, changes) {
   changes = changes || [];
   if (!changes.length) return { ok: false, message: 'אין שינויים לשמור' };
-  var all = readRows('Requests'), byId = {};
-  all.forEach(function (x) { byId[x.id] = x; });
+  var all = readRows('Requests'), byId = {}, before = {};
+  all.forEach(function (x) { byId[x.id] = x; before[x.id] = JSON.parse(JSON.stringify(x)); });
   var cars = {}; readRows('Cars').forEach(function (c) { if (c.active === 'yes') cars[c.id] = c; });
   for (var i = 0; i < changes.length; i++) {
     var ch = changes[i], x = byId[ch.id];
@@ -331,6 +352,8 @@ function assignCars(me, changes) {
     var r = findRow('Requests', 'id', ch.id);
     var x = byId[ch.id];
     updateRow('Requests', r.row, { carId: x.carId, fromDate: x.fromDate, toDate: x.toDate, decidedAt: nowStr(), decidedBy: me.name });
+    var ct = changeTxt(before[ch.id], x);
+    if (ct) notify(x.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + x.destination + ': ' + ct);
   });
   return { ok: true };
 }
@@ -353,9 +376,11 @@ function swapCar(me, r, car) {
     }
   }
   updateRow('Requests', r.row, { carId: newCar, decidedAt: nowStr(), decidedBy: me.name });
+  notify(q.userName, 'עדכון בנסיעה שלך', tripTxt(q) + ': רכב ' + carNameOf(oldCar) + ' ← ' + car.data.name);
   others.forEach(function (x) {
     var xr = findRow('Requests', 'id', x.id);
     updateRow('Requests', xr.row, { carId: oldCar, decidedAt: nowStr(), decidedBy: me.name });
+    notify(x.userName, 'עדכון בנסיעה שלך', tripTxt(x) + ': רכב ' + car.data.name + ' ← ' + carNameOf(oldCar));
   });
   return { ok: true, swapped: others.map(function (x) { return x.userName; }) };
 }
@@ -410,10 +435,12 @@ function decide(me, q) {
   if (!r) return { ok: false, message: 'הבקשה לא נמצאה' };
   if (q.decision === 'reject') {
     updateRow('Requests', r.row, { status: 'rejected', carId: '', adminNote: clip(q.note, 200), decidedAt: nowStr(), decidedBy: me.name });
+    notify(r.data.userName, 'עדכון בבקשת הרכב', 'הבקשה נדחתה: ' + tripTxt(r.data) + (q.note ? ' · ' + clip(q.note, 200) : ''));
     return { ok: true };
   }
   if (q.decision === 'unassign') {
     updateRow('Requests', r.row, { status: 'pending', carId: '', decidedAt: nowStr(), decidedBy: me.name });
+    notify(r.data.userName, 'עדכון בנסיעה שלך', 'הנסיעה הוחזרה להמתנה: ' + tripTxt(r.data));
     return { ok: true };
   }
   var car = findRow('Cars', 'id', q.carId);
@@ -426,7 +453,10 @@ function decide(me, q) {
   if (clash.length) return { ok: false, message: car.data.name + ' כבר משובץ ל' + clash[0].userName + ' בתאריכים האלה' };
   var mt = maintClash(q.carId, r.data.fromDate, r.data.toDate);
   if (mt) return { ok: false, message: maintMsg(car.data.name, mt) };
+  var wasApproved = r.data.status === 'approved', oldCar = r.data.carId;
   updateRow('Requests', r.row, { status: 'approved', carId: q.carId, adminNote: clip(q.note, 200), decidedAt: nowStr(), decidedBy: me.name });
+  if (!wasApproved) notify(r.data.userName, 'הבקשה אושרה ✓', tripTxt(r.data) + ' – ' + car.data.name + (q.note ? ' · ' + clip(q.note, 200) : ''));
+  else if (oldCar !== q.carId) notify(r.data.userName, 'עדכון בנסיעה שלך', tripTxt(r.data) + ': רכב ' + carNameOf(oldCar) + ' ← ' + car.data.name);
   return { ok: true };
 }
 
@@ -606,3 +636,168 @@ function cleanDate(s) { s = String(s || ''); return /^\d{4}-\d{2}-\d{2}$/.test(s
 function tz() { return Session.getScriptTimeZone() || 'Asia/Jerusalem'; }
 function nowStr() { return Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd HH:mm'); }
 function json(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+
+/* ---------- התראות לטלפון (Web Push) ----------
+   המפתחות נוצרים אוטומטית בפעם הראשונה ונשמרים במאפייני הסקריפט.
+   ההתראה נשלחת ריקה. הטלפון מושך את התוכן מהשרת (פעולה notices), כך שפרטים לא עוברים דרך שרתי ההתראות. */
+
+var EC_P = BigInt('0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff');
+var EC_A = EC_P - BigInt(3);
+var EC_N = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+var EC_G = [BigInt('0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296'),
+            BigInt('0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5')];
+
+function ecMod(a, m) { var r = a % m; return r < BigInt(0) ? r + m : r; }
+function ecInv(a, m) {
+  var lm = BigInt(1), hm = BigInt(0), low = ecMod(a, m), high = m;
+  while (low > BigInt(1)) { var q = high / low; var nm = hm - lm * q, nw = high - low * q; hm = lm; high = low; lm = nm; low = nw; }
+  return ecMod(lm, m);
+}
+function ecAdd(P, Q) {
+  if (!P) return Q; if (!Q) return P;
+  var l;
+  if (P[0] === Q[0]) {
+    if (ecMod(P[1] + Q[1], EC_P) === BigInt(0)) return null;
+    l = ecMod((BigInt(3) * P[0] * P[0] + EC_A) * ecInv(BigInt(2) * P[1], EC_P), EC_P);
+  } else {
+    l = ecMod((Q[1] - P[1]) * ecInv(Q[0] - P[0], EC_P), EC_P);
+  }
+  var x = ecMod(l * l - P[0] - Q[0], EC_P);
+  return [x, ecMod(l * (P[0] - x) - P[1], EC_P)];
+}
+function ecMul(k, P) {
+  var R = null, A = P;
+  while (k > BigInt(0)) { if (k & BigInt(1)) R = ecAdd(R, A); A = ecAdd(A, A); k >>= BigInt(1); }
+  return R;
+}
+function bytesToBig(b) { var h = ''; for (var i = 0; i < b.length; i++) h += ('0' + (b[i] & 255).toString(16)).slice(-2); return BigInt('0x' + (h || '0')); }
+function bigToBytes(x, len) { var h = x.toString(16); while (h.length < len * 2) h = '0' + h; var out = []; for (var i = 0; i < len; i++) out.push(parseInt(h.substr(i * 2, 2), 16)); return out; }
+function toSigned(b) { return b.map(function (v) { v = v & 255; return v > 127 ? v - 256 : v; }); }
+function toUnsigned(b) { return b.map(function (v) { return v & 255; }); }
+function b64u(bytes) { return Utilities.base64EncodeWebSafe(toSigned(bytes)).replace(/=+$/, ''); }
+function sha256(bytes) { return toUnsigned(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, toSigned(bytes))); }
+function hmac(key, bytes) { return toUnsigned(Utilities.computeHmacSha256Signature(toSigned(bytes), toSigned(key))); }
+function strBytes(s) { return toUnsigned(Utilities.newBlob(s).getBytes()); }
+
+/* חתימת ECDSA P-256 עם k דטרמיניסטי (RFC 6979) */
+function ecdsaSign(d, msgBytes) {
+  var h1 = sha256(msgBytes), z = bytesToBig(h1);
+  var x = bigToBytes(d, 32), h1o = bigToBytes(ecMod(z, EC_N), 32);
+  var V = [], K = [], i;
+  for (i = 0; i < 32; i++) { V.push(1); K.push(0); }
+  K = hmac(K, V.concat([0], x, h1o)); V = hmac(K, V);
+  K = hmac(K, V.concat([1], x, h1o)); V = hmac(K, V);
+  for (var tries = 0; tries < 100; tries++) {
+    V = hmac(K, V);
+    var k = bytesToBig(V);
+    if (k >= BigInt(1) && k < EC_N) {
+      var R = ecMul(k, EC_G), r = ecMod(R[0], EC_N);
+      if (r !== BigInt(0)) {
+        var s = ecMod(ecInv(k, EC_N) * (z + r * d), EC_N);
+        if (s !== BigInt(0)) return bigToBytes(r, 32).concat(bigToBytes(s, 32));
+      }
+    }
+    K = hmac(K, V.concat([0])); V = hmac(K, V);
+  }
+  throw new Error('signing failed');
+}
+
+function vapidKeys() {
+  var props = PropertiesService.getScriptProperties();
+  var d = props.getProperty('VAPID_D'), pub = props.getProperty('VAPID_PUB');
+  if (!d || !pub) {
+    var seed = sha256(strBytes(Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid() + Date.now()));
+    var dn = ecMod(bytesToBig(seed), EC_N - BigInt(1)) + BigInt(1);
+    var Q = ecMul(dn, EC_G);
+    d = dn.toString(16); pub = b64u([4].concat(bigToBytes(Q[0], 32), bigToBytes(Q[1], 32)));
+    props.setProperty('VAPID_D', d); props.setProperty('VAPID_PUB', pub);
+  }
+  return { d: BigInt('0x' + d), pub: pub };
+}
+
+function vapidJwt(aud) {
+  var cache = CacheService.getScriptCache(), ck = 'jwt_' + Utilities.base64EncodeWebSafe(aud);
+  var hit = cache.get(ck); if (hit) return hit;
+  var keys = vapidKeys();
+  var sub = 'mailto:' + (Session.getEffectiveUser().getEmail() || 'admin@example.com');
+  var head = b64u(strBytes(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  var body = b64u(strBytes(JSON.stringify({ aud: aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: sub })));
+  var jwt = head + '.' + body + '.' + b64u(ecdsaSign(keys.d, strBytes(head + '.' + body)));
+  cache.put(ck, jwt, 11 * 3600);
+  return jwt;
+}
+
+/* ---------- מנויים והודעות ---------- */
+function pushSubscribe(me, sub) {
+  if (!sub || !sub.endpoint || !/^https:\/\//.test(sub.endpoint)) return { ok: false, message: 'מנוי לא תקין' };
+  var r = findRow('Subscriptions', 'endpoint', sub.endpoint);
+  if (r) updateRow('Subscriptions', r.row, { userName: me.name, createdAt: nowStr() });
+  else appendRow('Subscriptions', { userName: me.name, endpoint: sub.endpoint, createdAt: nowStr() });
+  return { ok: true };
+}
+function pushUnsubscribe(endpoint) {
+  var r = findRow('Subscriptions', 'endpoint', endpoint);
+  if (r) sheet('Subscriptions').deleteRow(r.row);
+  return { ok: true };
+}
+
+/* הודעות נאספות בזמן הפעולה ונשלחות בסופה, אחרי שהנעילה שוחררה */
+var NOTICE_QUEUE = [];
+function notify(userName, title, text, view) { if (userName) NOTICE_QUEUE.push({ userName: userName, title: title, text: text, view: view || 'mine' }); }
+function notifyAdmins(text, exceptName) {
+  var admins = readRows('Users').filter(function (u) { return u.role === 'admin'; }).map(function (u) { return u.name; });
+  admins.push(INITIAL_ADMIN_NAME);
+  admins.forEach(function (n) { if (n !== exceptName) notify(n, 'שריון רכבים – מזכירות', text, 'req'); });
+}
+function flushNotices() {
+  if (!NOTICE_QUEUE.length) return;
+  var q = NOTICE_QUEUE; NOTICE_QUEUE = [];
+  var users = {};
+  q.forEach(function (n) {
+    appendRow('Notices', { id: newId(), userName: n.userName, title: n.title, text: n.text, view: n.view, createdAt: nowStr(), delivered: '' });
+    users[n.userName] = 1;
+  });
+  var subs = readRows('Subscriptions').filter(function (s) { return users[s.userName]; });
+  subs.forEach(function (s) { sendPush(s.endpoint); });
+}
+function sendPush(endpoint) {
+  try {
+    var aud = endpoint.match(/^https:\/\/[^\/]+/)[0];
+    var res = UrlFetchApp.fetch(endpoint, {
+      method: 'post', payload: '', muteHttpExceptions: true,
+      headers: { Authorization: 'vapid t=' + vapidJwt(aud) + ', k=' + vapidKeys().pub, TTL: '86400', Urgency: 'high' }
+    });
+    var code = res.getResponseCode();
+    if (code === 404 || code === 410) pushUnsubscribe(endpoint);
+    return code;
+  } catch (e) { return 'ERR ' + e; }
+}
+/* הטלפון קורא לזה כשמגיעה התראה: מחזיר הודעות שעוד לא הוצגו */
+function takeNotices(me) {
+  var sh = sheet('Notices'), last = sh.getLastRow(), cols = SHEETS.Notices;
+  if (last < 2) return { ok: true, notices: [] };
+  var vals = sh.getRange(2, 1, last - 1, cols.length).getValues();
+  var out = [], recent = [], now = Date.now();
+  for (var i = vals.length - 1; i >= 0 && i >= vals.length - 300; i--) {
+    var o = {}; cols.forEach(function (c, j) { o[c] = cellStr(vals[i][j], c); });
+    if (o.userName !== me.name) continue;
+    if (!o.delivered) { out.push(o); sh.getRange(i + 2, cols.indexOf('delivered') + 1).setValue(nowStr()); }
+    else if (recent.length < 3 && now - new Date(o.delivered.replace(' ', 'T')).getTime() < 3 * 60000) recent.push(o);
+  }
+  return { ok: true, notices: (out.length ? out : recent).reverse().map(function (n) { return { id: n.id, title: n.title, text: n.text, view: n.view }; }) };
+}
+
+/* ---------- טקסט ההודעות ---------- */
+function dmy(s) { var p = String(s).split('-'); return +p[2] + '.' + +p[1]; }
+function rangeTxt(a, b) { return a === b || !b ? dmy(a) : dmy(a) + '–' + dmy(b); }
+function carNameOf(id) { var c = findRow('Cars', 'id', id); return c ? c.data.name : ''; }
+function tripTxt(q) { return rangeTxt(q.fromDate, q.toDate) + ' · ' + q.destination; }
+function changeTxt(o, n) {
+  var ch = [];
+  if (o.fromDate !== n.fromDate || o.toDate !== n.toDate) ch.push('תאריכים ' + rangeTxt(o.fromDate, o.toDate) + ' ← ' + rangeTxt(n.fromDate, n.toDate));
+  if (o.carId !== n.carId) ch.push('רכב ' + (carNameOf(o.carId) || '—') + ' ← ' + (carNameOf(n.carId) || '—'));
+  if (o.departTime !== n.departTime) ch.push('יציאה ' + n.departTime);
+  if (o.destination !== n.destination) ch.push('יעד ' + n.destination);
+  if (o.project !== n.project) ch.push('פרויקט ' + n.project);
+  return ch.join(' · ');
+}
