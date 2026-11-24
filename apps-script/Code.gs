@@ -20,6 +20,8 @@ var SHEETS = {
   Subscriptions: ['userName', 'endpoint', 'createdAt'],
   Notices: ['id', 'userName', 'title', 'text', 'view', 'createdAt', 'delivered'],
   History: ['id', 'at', 'by', 'userName', 'action', 'text', 'reqId'],
+  Mileage: ['id', 'at', 'userName', 'carId', 'km', 'note'],
+  Faults: ['id', 'at', 'userName', 'carId', 'text', 'status', 'closedAt', 'closedBy'],
   Requests: ['id', 'userName', 'fromDate', 'toDate', 'departTime', 'destination', 'project', 'notes',
              'status', 'carId', 'adminNote', 'createdAt', 'decidedAt', 'decidedBy']
 };
@@ -76,6 +78,7 @@ function handle(req) {
   var me = verifyToken(req.token);
   if (!me) return { ok: false, error: 'AUTH', message: 'יש להתחבר מחדש' };
   ME = me;
+  var res;
 
   if (a === 'me') return { ok: true, name: me.name, role: me.role };
   if (a === 'myRequests') return { ok: true, requests: myRequests(me.name), cars: activeCars() };
@@ -83,9 +86,11 @@ function handle(req) {
   if (a === 'pushSubscribe') return pushSubscribe(me, req.sub);
   if (a === 'pushUnsubscribe') return pushUnsubscribe(String(req.endpoint || ''));
   if (a === 'notices') return takeNotices(me);
+  if (a === 'myKm') return myKm(me);
+  if (a === 'reportFault') return withLock(function () { return reportFault(me, req); });
+  if (a === 'reportKm') { res = withLock(function () { return reportKm(me, req); }); if (res.ok && me.role === 'admin') { var dd = adminData(); res.data = { requests: dd.requests, cars: dd.cars, users: dd.users, maint: dd.maint, carKm: dd.carKm, faults: dd.faults }; } return res; }
   if (a === 'pushTest') { notify(me.name, 'שריון רכבי מחלקה', 'התראת ניסיון – ההתראות פועלות בטלפון הזה ✓', me.role === 'admin' ? 'req' : 'mine'); return { ok: true }; }
 
-  var res;
   if (a === 'createRequest') res = withLock(function () { return createRequest(me, req); });
   else if (a === 'cancelRequest') res = withLock(function () { return cancelRequest(me, req.id); });
   else if (a === 'cancelDays') res = withLock(function () { return cancelDays(me, req.id, req.days); });
@@ -99,6 +104,7 @@ function handle(req) {
   if (me.role !== 'admin') return { ok: false, message: 'אין הרשאה' };
   if (a === 'adminData') return adminData();
   if (a === 'history') return historyData();
+  if (a === 'report') return monthReport(String(req.month || ''));
   var fns = {
     decide: function () { return decide(me, req); },
     addUser: function () { return addUser(req); },
@@ -110,13 +116,14 @@ function handle(req) {
     assignCars: function () { return assignCars(me, req.changes); },
     adminCreate: function () { return adminCreate(me, req); },
     adminEdit: function () { return adminEdit(me, req); },
+    closeFault: function () { return closeFault(me, req.id); },
     addMaint: function () { return addMaint(me, req); },
     removeMaint: function () { return removeMaint(req.id); }
   };
   if (!fns[a]) return { ok: false, message: 'פעולה לא מוכרת' };
   res = withLock(fns[a]);
   var d = adminData();
-  res.data = { requests: d.requests, cars: d.cars, users: d.users, maint: d.maint };
+  res.data = { requests: d.requests, cars: d.cars, users: d.users, maint: d.maint, carKm: d.carKm, faults: d.faults };
   return res;
 }
 
@@ -440,6 +447,93 @@ function resubmitRequest(me, q) {
   return { ok: true };
 }
 
+/* ---------- קילומטראז' וטיפולים ---------- */
+var SERVICE_EVERY = 15000, SERVICE_WARN = 500;
+/* הדיווח האחרון של כל רכב: { carId: { km, at, userName } } */
+function lastKmByCar() {
+  var out = {};
+  readRows('Mileage').forEach(function (m) {
+    var km = Number(m.km); if (!km) return;
+    var cur = out[m.carId];
+    if (!cur || km > cur.km || (km === cur.km && m.at > cur.at)) out[m.carId] = { km: km, at: m.at, userName: m.userName };
+  });
+  return out;
+}
+function fmtNum(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function nextService(km) { return Math.max(SERVICE_EVERY, Math.ceil(km / SERVICE_EVERY) * SERVICE_EVERY); }
+/* הרכב שהעובד כנראה נוסע בו עכשיו: נסיעה מאושרת של היום, ואם אין – האחרונה שהייתה */
+function suggestKmCar(name) {
+  var today = Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd');
+  var mine = readRows('Requests').filter(function (r) { return r.userName === name && r.status === 'approved' && r.carId && r.fromDate <= today; });
+  var now = mine.filter(function (r) { return r.toDate >= today; })[0];
+  if (now) return now.carId;
+  mine.sort(function (a, b) { return a.toDate < b.toDate ? 1 : -1; });
+  return mine.length ? mine[0].carId : '';
+}
+function myKm(me) {
+  var list = readRows('Mileage').filter(function (m) { return m.userName === me.name; }).sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 20);
+  var faults = readRows('Faults').filter(function (f) { return f.userName === me.name; }).sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 15);
+  return { ok: true, cars: activeCars(), carKm: lastKmByCar(), suggested: suggestKmCar(me.name), mine: list, faults: faults };
+}
+function reportKm(me, q) {
+  var car = findRow('Cars', 'id', q.carId);
+  if (!car || car.data.active !== 'yes') return { ok: false, message: 'יש לבחור רכב' };
+  var km = Math.round(Number(String(q.km || '').replace(/[^\d.]/g, '')));
+  if (!km || km < 1 || km > 2000000) return { ok: false, message: 'יש להזין קילומטראז\' תקין' };
+  var last = lastKmByCar()[q.carId];
+  if (last && km < last.km) return { ok: false, message: 'הקילומטראז\' נמוך מהדיווח האחרון של ' + car.data.name + ' (' + fmtNum(last.km) + ' ק״מ, ' + last.userName + '). בדוק את המספר' };
+  if (last && km - last.km > 3000 && !q.force) return { ok: false, needForce: true, message: 'זה ' + fmtNum(km - last.km) + ' ק״מ יותר מהדיווח האחרון. אם המספר נכון, לחץ שוב לאישור' };
+  appendRow('Mileage', { id: newId(), at: nowStr(), userName: me.name, carId: q.carId, km: km, note: clip(q.note, 120) });
+  hist('דיווח קילומטראז\'', me.name, car.data.name + ': ' + fmtNum(km) + ' ק״מ' + (q.note ? ' · ' + clip(q.note, 120) : ''), '');
+  // התראה למזכירות כשמתקרבים לטיפול (כל 15,000 ק"מ) או כשעברו סף בלי התראה
+  var props = PropertiesService.getScriptProperties(), key = 'svc_' + q.carId;
+  var notified = Number(props.getProperty(key) || 0);
+  var passed = Math.floor(km / SERVICE_EVERY) * SERVICE_EVERY, next = nextService(km), left = next - km;
+  var name = car.data.name + (car.data.plate ? ' (' + car.data.plate + ')' : '');
+  if (passed > 0 && passed > notified && last && last.km < passed) {
+    notifyAdmins('🔧 ' + name + ' עבר ' + fmtNum(passed) + ' ק״מ – הגיע זמן טיפול (עכשיו ' + fmtNum(km) + ' ק״מ)');
+    props.setProperty(key, String(passed)); notified = passed;
+  }
+  if (left <= SERVICE_WARN && next > notified) {
+    notifyAdmins('🔧 ' + name + ' – טיפול ' + fmtNum(next) + ' ק״מ בעוד ' + fmtNum(left) + ' ק״מ (עכשיו ' + fmtNum(km) + ')');
+    props.setProperty(key, String(next));
+  }
+  return { ok: true, km: km, next: next, left: left };
+}
+
+/* ---------- תקלות לתיקון ---------- */
+function reportFault(me, q) {
+  var car = findRow('Cars', 'id', q.carId);
+  if (!car || car.data.active !== 'yes') return { ok: false, message: 'יש לבחור רכב' };
+  var text = clip(q.text, 300);
+  if (!text) return { ok: false, message: 'יש לתאר את התקלה' };
+  appendRow('Faults', { id: newId(), at: nowStr(), userName: me.name, carId: q.carId, text: text, status: 'open', closedAt: '', closedBy: '' });
+  notifyAdmins('⚠️ תקלה ב' + car.data.name + ': ' + text + ' (דיווח: ' + me.name + ')', me.name);
+  hist('דיווח תקלה', me.name, car.data.name + ': ' + text, '');
+  return { ok: true };
+}
+function closeFault(me, id) {
+  var r = findRow('Faults', 'id', id);
+  if (!r) return { ok: false, message: 'התקלה לא נמצאה' };
+  updateRow('Faults', r.row, { status: 'closed', closedAt: nowStr(), closedBy: me.name });
+  var cn = carNameOf(r.data.carId);
+  if (r.data.userName !== me.name) notify(r.data.userName, 'עדכון על תקלה', 'התקלה שדיווחת ב' + cn + ' טופלה: ' + r.data.text, 'km');
+  hist('תקלה טופלה', r.data.userName, cn + ': ' + r.data.text, '');
+  return { ok: true };
+}
+
+/* ---------- דוח חודשי ---------- */
+function monthReport(month) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return { ok: false, message: 'חודש לא תקין' };
+  var from = month + '-01', y = +month.slice(0, 4), mo = +month.slice(5, 7);
+  var to = month + '-' + pad2(new Date(y, mo, 0).getDate());
+  var reqs = readRows('Requests').filter(function (r) { return r.status === 'approved' && r.fromDate <= to && r.toDate >= from; })
+    .map(function (r) { return { id: r.id, userName: r.userName, carId: r.carId, fromDate: r.fromDate, toDate: r.toDate, destination: r.destination, project: r.project }; });
+  var maint = readRows('Maintenance').filter(function (m) { return m.fromDate <= to && m.toDate >= from; });
+  var km = readRows('Mileage').filter(function (m) { return m.at.slice(0, 10) <= to; }).map(function (m) { return { carId: m.carId, km: Number(m.km), at: m.at }; });
+  return { ok: true, month: month, from: from, to: to, requests: reqs, cars: readRows('Cars'), maint: maint, km: km };
+}
+
 /* ---------- רכב בטיפול ---------- */
 function maintList() {
   var cutoff = Utilities.formatDate(new Date(Date.now() - 60 * 86400000), tz(), 'yyyy-MM-dd');
@@ -484,7 +578,8 @@ function adminData() {
   var cutoff = Utilities.formatDate(new Date(Date.now() - 60 * 86400000), tz(), 'yyyy-MM-dd');
   reqs = reqs.filter(function (r) { return r.status === 'pending' || r.toDate >= cutoff; });
   var users = readRows('Users').filter(function (u) { return !isMaster(u.name); }).map(function (u) { return { name: u.name, role: u.role }; });
-  return { ok: true, requests: reqs, cars: readRows('Cars'), users: users, maint: maintList() };
+  var faults = readRows('Faults').filter(function (f) { return f.status !== 'closed' || f.closedAt >= cutoff; });
+  return { ok: true, requests: reqs, cars: readRows('Cars'), users: users, maint: maintList(), carKm: lastKmByCar(), faults: faults };
 }
 
 function decide(me, q) {
