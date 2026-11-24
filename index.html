@@ -248,9 +248,9 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
       </form>
     </div>
     <div class="card"><h2>בקשות ממתינות</h2><div id="pendList"></div></div>
-    <div class="card hidden" id="rejCard"><h2>בקשות שנדחו</h2><p class="muted" style="margin:0 0 6px">אפשר לאשר אותן בכל זאת, להחזיר להמתנה או לערוך</p><div id="rejList"></div></div>
     <div class="card hidden" id="cancCard"><h2>ביטולים של נסיעות מאושרות</h2><p class="muted" style="margin:0 0 6px">הרכבים האלה התפנו כי העובד ביטל את הנסיעה</p><div id="cancList"></div></div>
     <div class="card"><div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">שיבוצים קרובים</h2><button class="btn ok sm" type="button" id="aSaveAll" disabled>שמור הכל</button></div><div id="assignErr" class="msg err hidden" style="margin-bottom:8px"></div><div id="apprList"></div></div>
+    <div class="card hidden" id="rejCard"><h2>בקשות שנדחו</h2><p class="muted" style="margin:0 0 6px">אפשר לאשר אותן בכל זאת, להחזיר להמתנה או לערוך</p><div id="rejList"></div></div>
   </div>
   <div id="aReport" class="stack hidden">
     <div class="card" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between">
@@ -338,7 +338,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-24-2';
+var APP_VERSION = '2026-11-24-3';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
