@@ -86,6 +86,7 @@ function handle(req) {
   if (a === 'pushSubscribe') return pushSubscribe(me, req.sub);
   if (a === 'pushUnsubscribe') return pushUnsubscribe(String(req.endpoint || ''));
   if (a === 'notices') return takeNotices(me);
+  if (a === 'myNotices') return myNotices(me);
   if (a === 'myKm') return myKm(me);
   if (a === 'reportFault') return withLock(function () { return reportFault(me, req); });
   if (a === 'reportKm') { res = withLock(function () { return reportKm(me, req); }); if (res.ok && me.role === 'admin') { var dd = adminData(); res.data = { requests: dd.requests, cars: dd.cars, users: dd.users, maint: dd.maint, carKm: dd.carKm, faults: dd.faults }; } return res; }
@@ -1029,6 +1030,13 @@ function takeNotices(me) {
     else if (recent.length < 3 && now - new Date(o.delivered.replace(' ', 'T')).getTime() < 3 * 60000) recent.push(o);
   }
   return { ok: true, notices: (out.length ? out : recent).reverse().map(function (n) { return { id: n.id, title: n.title, text: n.text, view: n.view }; }) };
+}
+
+/* כל ההתראות של העובד, מהחדשה לישנה (לטאב "התראות") */
+function myNotices(me) {
+  var list = readRows('Notices').filter(function (n) { return n.userName === me.name; });
+  list.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0; });
+  return { ok: true, notices: list.slice(0, 300).map(function (n) { return { id: n.id, title: n.title, text: n.text, view: n.view, at: n.createdAt }; }) };
 }
 
 /* ---------- טקסט ההודעות ---------- */

@@ -47,6 +47,11 @@ input.i:focus,select.i:focus,textarea.i:focus{outline:2px solid var(--accent);ou
 .tabs{display:flex;gap:6px;flex-wrap:wrap}
 .tab{min-height:44px;padding:0 14px;border-radius:10px;border:none;background:transparent;color:var(--muted);font-weight:500;cursor:pointer}
 .tab.on{background:var(--accent-l);color:var(--accent-d);font-weight:700}
+.badge{display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;margin-inline-start:4px;border-radius:9px;background:var(--bad);color:#fff;font-size:12px;font-weight:700;text-align:center;vertical-align:1px}
+.ntf{display:flex;gap:12px;align-items:flex-start;cursor:pointer}
+.ntf .ic{flex-shrink:0;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700}
+.ntf.new{border-inline-start:4px solid var(--accent)}
+.ntfDay{font-size:13px;font-weight:700;color:var(--muted);margin:10px 4px 2px}
 .pill{font-size:13px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
 .p-pending{background:var(--warn-bg);color:var(--warn)}
 .p-approved{background:var(--ok-bg);color:var(--ok)}
@@ -211,6 +216,9 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <!-- עובד: הבקשות שלי -->
 <section id="vMine" class="wrap hidden"><div id="mineList" class="list"></div></section>
 
+<!-- התראות (עובד) -->
+<section id="vNtf" class="wrap hidden"><div id="ntfList" class="list"></div></section>
+
 <!-- לוח רכבים (לכולם, לעובדים לקריאה בלבד) -->
 <section id="vBoard" class="wrap wide hidden">
   <div id="aBoard" class="card stack">
@@ -343,7 +351,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-24-5';
+var APP_VERSION = '2026-11-24-6';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -411,7 +419,7 @@ function logout() {
   var oldToken = S.token;
   getSub().then(function (s) { if (s && oldToken) fetch(API, { method: 'POST', body: JSON.stringify({ action: 'pushUnsubscribe', endpoint: s.endpoint, token: oldToken }) }).catch(function () {}); });
   tokenForSW(null); show($('pushBar'), false);
-  S.token = null; store('cb_token', null); store('cb_name', null); store('cb_role', null);
+  S.token = null; S.ntf = null; store('cb_token', null); store('cb_name', null); store('cb_role', null);
   ['topBar', 'vNew', 'vMine', 'vKm', 'vAdmin', 'vBoard', 'loading'].forEach(function (id) { show($(id), false); });
   show($('vLogin'), true);
 }
@@ -422,22 +430,23 @@ function start() {
   $('hello').textContent = 'שלום, ' + S.name;
   var tabs = S.role === 'admin'
     ? [['req', 'בקשות'], ['board', 'לוח רכבים'], ['report', 'דוח חודשי'], ['hist', 'היסטוריה'], ['users', 'עובדים'], ['cars', 'רכבים']]
-    : [['new', 'בקשה חדשה'], ['mine', 'הבקשות שלי'], ['board', 'לוח רכבים'], ['km', 'קילומטראז\'']];
+    : [['new', 'בקשה חדשה'], ['mine', 'הבקשות שלי'], ['ntf', 'התראות'], ['board', 'לוח רכבים'], ['km', 'קילומטראז\'']];
   $('tabs').innerHTML = tabs.map(function (t) { return '<button type="button" class="tab" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
   var qv = (location.search.match(/[?&]view=(\w+)/) || [])[1];
-  var allowed = S.role === 'admin' ? ['req', 'board', 'report', 'hist', 'users', 'cars'] : ['new', 'mine', 'board', 'km'];
+  var allowed = S.role === 'admin' ? ['req', 'board', 'report', 'hist', 'users', 'cars'] : ['new', 'mine', 'ntf', 'board', 'km'];
   go(allowed.indexOf(qv) >= 0 ? qv : (S.role === 'admin' ? 'req' : 'new'));
-  if (S.role !== 'admin') loadMine();
+  if (S.role !== 'admin') { loadMine(); if (qv !== 'ntf') loadNtf(); }
   pushAfterLogin();
 }
 $('tabs').addEventListener('click', function (e) { var v = e.target.getAttribute('data-v'); if (v) go(v); });
 
-var TITLES = { new: 'בקשת רכב חדשה', mine: 'הבקשות שלי', req: 'ניהול בקשות', board: 'לוח רכבים', hist: 'היסטוריה', report: 'דוח חודשי', km: 'דיווח קילומטראז\'', users: 'עובדים', cars: 'רכבים' };
+var TITLES = { new: 'בקשת רכב חדשה', mine: 'הבקשות שלי', req: 'ניהול בקשות', board: 'לוח רכבים', hist: 'היסטוריה', ntf: 'התראות', report: 'דוח חודשי', km: 'דיווח קילומטראז\'', users: 'עובדים', cars: 'רכבים' };
 function go(v, noFetch) {
   S.view = v;
   $('pageTitle').textContent = TITLES[v];
   Array.prototype.forEach.call($('tabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-v') === v); });
-  show($('vNew'), v === 'new'); show($('vMine'), v === 'mine'); show($('vKm'), v === 'km');
+  show($('vNew'), v === 'new'); show($('vMine'), v === 'mine'); show($('vKm'), v === 'km'); show($('vNtf'), v === 'ntf');
+  if (v === 'ntf') { S.ntfMark = ntfSeen(); if (S.ntf) renderNtf(); else $('ntfList').innerHTML = '<div class="center"><span class="spin"></span></div>'; if (!noFetch) loadNtf(); }
   show($('aReport'), v === 'report'); if (v === 'report' && !noFetch) loadReport();
   if (v === 'km') { if (S.km) renderKm(); if (!noFetch) loadKm(); }
   show($('vAdmin'), S.role === 'admin');
@@ -589,7 +598,7 @@ function checkNotices(list) {
     if (text) items.push({ text: text, note: q.adminNote });
   });
   if (!items.length) { saveSeen(list); return; }
-  pendingNotice = list;
+  pendingNotice = list; loadNtf();
   $('noticeList').innerHTML = items.map(function (it) { return '<div class="msg good" style="color:var(--ink)">' + esc(it.text) + (it.note ? '<div class="muted">הערת המזכירה: ' + esc(it.note) + '</div>' : '') + '</div>'; }).join('');
   show($('noticePerm'), 'Notification' in window && Notification.permission === 'default');
   show($('notice'), true);
@@ -600,6 +609,51 @@ function checkNotices(list) {
 $('noticeOk').addEventListener('click', function () { if (pendingNotice) saveSeen(pendingNotice); pendingNotice = null; show($('notice'), false); });
 $('noticeGo').addEventListener('click', function () { if (pendingNotice) saveSeen(pendingNotice); pendingNotice = null; show($('notice'), false); go('mine'); });
 $('noticePerm').addEventListener('click', function () { try { Notification.requestPermission().then(function () { show($('noticePerm'), false); }); } catch (e) {} });
+/* ---- טאב התראות ---- */
+function ntfSeenKey() { return 'cb_ntf_seen_' + S.name; }
+function ntfSeen() { try { return localStorage.getItem(ntfSeenKey()) || ''; } catch (e) { return ''; } }
+function loadNtf() {
+  if (S.role === 'admin') return;
+  api('myNotices').then(function (r) {
+    if (!r.ok) { if (S.view === 'ntf' && !S.ntf) $('ntfList').innerHTML = '<div class="msg err">' + esc(r.message) + '</div>'; return; }
+    S.ntf = r.notices || [];
+    if (S.view === 'ntf') renderNtf(); else ntfBadge();
+  });
+}
+function ntfBadge() {
+  var b = document.querySelector('#tabs [data-v=ntf]'); if (!b) return;
+  var seen = S.view === 'ntf' ? '\uffff' : ntfSeen();
+  var n = (S.ntf || []).filter(function (x) { return x.at > seen; }).length;
+  b.innerHTML = 'התראות' + (n ? '<span class="badge">' + (n > 99 ? '99+' : n) + '</span>' : '');
+}
+function ltrDates(h) { return h.replace(/\d{1,2}\.\d{1,2}(?:\s*[–-]\s*\d{1,2}\.\d{1,2})?/g, function (m) { return ltr(m); }); }
+function ntfIcon(t) {
+  if (/אושר|נוספה/.test(t)) return ['✓', '#E3F4EA', '#0F5A37'];
+  if (/נדח/.test(t)) return ['✕', '#FBE7E7', '#9B1C1C'];
+  if (/בוטל|התבטל/.test(t)) return ['−', '#EEF0F3', '#4A5868'];
+  if (/קילומטר|ק"מ|ק״מ|טיפול/.test(t)) return ['⛽', '#FFF4DC', '#7A5300'];
+  return ['↻', '#E6EEFB', '#1F4FA0'];
+}
+function renderNtf() {
+  var list = S.ntf || [], seen = S.ntfMark || '', last = '';
+  if (!list.length) { $('ntfList').innerHTML = '<div class="card muted" style="text-align:center">עדיין אין התראות. כאן יופיעו כל העדכונים על הנסיעות שלך: אישורים, דחיות, החלפות רכב ושינויי תאריכים.</div>'; }
+  else $('ntfList').innerHTML = list.map(function (n) {
+    var day = (n.at || '').slice(0, 10), h = '';
+    if (day !== last) { last = day; var t = iso(new Date()), y = addDays(t, -1); h = '<div class="ntfDay">' + (day === t ? 'היום' : day === y ? 'אתמול' : dayName(day) + ' ' + ltr(dm(day))) + '</div>'; }
+    var ic = ntfIcon(n.title + ' ' + n.text);
+    return h + '<article class="card ntf' + (n.at > seen ? ' new' : '') + '" data-goview="' + esc(n.view || 'mine') + '">' +
+      '<div class="ic" style="background:' + ic[1] + ';color:' + ic[2] + '">' + ic[0] + '</div>' +
+      '<div class="stack" style="gap:2px;min-width:0"><b>' + esc(n.title) + '</b><span>' + ltrDates(esc(n.text)) + '</span><span class="muted" style="font-size:13px">' + ltr((n.at || '').slice(11, 16)) + '</span></div></article>';
+  }).join('');
+  if (list.length) { try { localStorage.setItem(ntfSeenKey(), list[0].at); } catch (e) {} }
+  ntfBadge();
+}
+$('ntfList').addEventListener('click', function (e) {
+  var c = e.target.closest('[data-goview]'); if (!c) return;
+  var v = c.getAttribute('data-goview'); if (['mine', 'board', 'km', 'new'].indexOf(v) >= 0) go(v);
+});
+document.addEventListener('visibilitychange', function () { if (!document.hidden && S.token && S.role === 'user') loadNtf(); });
+
 function renderMine() {
   var el = $('mineList'), r = S.mine;
   var cars = {}; r.cars.forEach(function (c) { cars[c.id] = c; });
@@ -1582,7 +1636,7 @@ var swReg = null;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (r) { swReg = r; renderPushBar(); }).catch(function () {});
   navigator.serviceWorker.addEventListener('message', function (e) {
-    if (e.data && e.data.type === 'open' && S.token) { var v = e.data.view; if ((S.role === 'admin' ? ['req', 'cars', 'board'] : ['mine', 'km', 'board']).indexOf(v) >= 0) go(v); }
+    if (e.data && e.data.type === 'open' && S.token) { var v = e.data.view; if ((S.role === 'admin' ? ['req', 'cars', 'board'] : ['mine', 'km', 'board']).indexOf(v) >= 0) go(v); if (S.role === 'user') loadNtf(); }
   });
 }
 function pushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
