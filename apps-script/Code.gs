@@ -355,16 +355,23 @@ function assignCars(me, changes) {
     var ch = changes[i], x = byId[ch.id];
     if (!x || x.status !== 'approved') return { ok: false, message: 'אחת הנסיעות כבר לא מאושרת. רענן את הדף' };
     if (!cars[ch.carId]) return { ok: false, message: 'יש לבחור רכב לנסיעה של ' + x.userName };
-    var day = cleanDate(ch.day);
-    if (day && x.fromDate !== x.toDate) { // החלפת רכב ליום אחד בלבד מתוך נסיעה של כמה ימים
-      if (day < x.fromDate || day > x.toDate) return { ok: false, message: 'היום לא נמצא בנסיעה של ' + x.userName + '. רענן את הדף' };
-      var orig = JSON.parse(JSON.stringify(x));
-      var rr = runs(dateList(x.fromDate, x.toDate).filter(function (d) { return d !== day; }));
-      var piece = JSON.parse(JSON.stringify(orig)); piece.id = newId(); piece.fromDate = piece.toDate = day; piece.carId = ch.carId; trimDest(piece);
-      x.fromDate = rr[0][0]; x.toDate = rr[0][1]; x.destination = orig.destination; x.dayDest = orig.dayDest; trimDest(x);
-      for (var j = 1; j < rr.length; j++) { var ex = JSON.parse(JSON.stringify(orig)); ex.id = newId(); ex.fromDate = rr[j][0]; ex.toDate = rr[j][1]; trimDest(ex); adds.push(ex); all.push(ex); }
-      adds.push(piece); all.push(piece); checks.push(piece);
-      split[x.id] = { piece: piece, orig: orig };
+    var dset = {}, nd = 0;
+    (ch.days || (ch.day ? [ch.day] : [])).forEach(function (d) { d = cleanDate(d); if (d && d >= x.fromDate && d <= x.toDate && !dset[d]) { dset[d] = 1; nd++; } });
+    if ((ch.days || ch.day) && !nd) return { ok: false, message: 'הימים לא נמצאו בנסיעה של ' + x.userName + '. רענן את הדף' };
+    var allDays = dateList(x.fromDate, x.toDate);
+    if (nd && nd < allDays.length) { // החלפת רכב רק בחלק מהימים של הנסיעה: מפצלים את השורה
+      var orig = JSON.parse(JSON.stringify(x)), segs = [];
+      allDays.forEach(function (d) { var sel = !!dset[d], l = segs[segs.length - 1]; if (l && l.sel === sel && dateList(l.to, d).length === 2) l.to = d; else segs.push({ from: d, to: d, sel: sel }); });
+      var pieces = [];
+      segs.forEach(function (sg, idx) {
+        var o = idx === 0 ? x : JSON.parse(JSON.stringify(orig));
+        if (idx) o.id = newId();
+        o.fromDate = sg.from; o.toDate = sg.to; o.destination = orig.destination; o.dayDest = orig.dayDest; trimDest(o);
+        o.carId = sg.sel ? ch.carId : orig.carId;
+        if (idx) { adds.push(o); all.push(o); }
+        if (sg.sel) { checks.push(o); pieces.push(o); }
+      });
+      split[x.id] = { pieces: pieces, orig: orig, days: Object.keys(dset).sort() };
       continue;
     }
     checks.push(x);
@@ -389,8 +396,8 @@ function assignCars(me, changes) {
     var r = findRow('Requests', 'id', ch.id);
     var x = byId[ch.id], sp = split[ch.id];
     if (sp) {
-      updateRow('Requests', r.row, { fromDate: x.fromDate, toDate: x.toDate, destination: x.destination, dayDest: x.dayDest });
-      var t = 'ב-' + dmy(sp.piece.fromDate) + ' בלבד: רכב ' + carNameOf(sp.orig.carId) + ' ← ' + carNameOf(sp.piece.carId);
+      updateRow('Requests', r.row, { fromDate: x.fromDate, toDate: x.toDate, destination: x.destination, dayDest: x.dayDest, carId: x.carId });
+      var t = 'ב-' + runs(sp.days).map(function (r) { return rangeTxt(r[0], r[1]); }).join(', ') + ' בלבד: רכב ' + carNameOf(sp.orig.carId) + ' ← ' + carNameOf(sp.pieces[0].carId);
       notify(x.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + sp.orig.destination + ': ' + t);
       hist('שינוי שיבוץ', x.userName, 'נסיעה ל' + sp.orig.destination + ': ' + t, x.id);
       return;

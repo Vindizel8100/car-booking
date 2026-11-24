@@ -343,7 +343,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-24-4';
+var APP_VERSION = '2026-11-24-5';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -1223,16 +1223,28 @@ function dropTrip(rid, srcDay, srcCar, target) {
   if (U) {
     if (delta !== 0) { msg($('aMsg'), 'כדי להחליף רכבים בין עובדים, גרור לאותו יום ברכב השני'); window.scrollTo(0, 0); return; }
     title = 'להחליף רכבים בין העובדים?';
-    whole = [{ id: T.id, carId: U.carId, fromDate: T.fromDate, toDate: T.toDate }, { id: U.id, carId: T.carId, fromDate: U.fromDate, toDate: U.toDate }];
-    var sameRange = T.fromDate === U.fromDate && T.toDate === U.toDate;
-    if (sameRange) {
-      text = '<b>' + esc(T.userName) + '</b> (' + range(T.fromDate, T.toDate) + ') יקבל את <b>' + carName(U.carId) + '</b><br><b>' + esc(U.userName) + '</b> (' + range(U.fromDate, U.toDate) + ') יקבל את <b>' + carName(T.carId) + '</b>';
-    } else {
-      oneDay = [{ id: T.id, carId: U.carId, day: srcDay }, { id: U.id, carId: T.carId, day: srcDay }];
-      text = 'ב<b>' + dayTxt + '</b>: <b>' + esc(T.userName) + '</b> יקבל את <b>' + carName(U.carId) + '</b>, ו<b>' + esc(U.userName) + '</b> יקבל את <b>' + carName(T.carId) + '</b>.' +
-        '<div class="muted" style="margin-top:6px">בשאר הימים כל אחד נשאר עם הרכב שלו. אפשר גם להחליף לכל הנסיעות (' + esc(T.userName) + ' ' + range(T.fromDate, T.toDate) + ', ' + esc(U.userName) + ' ' + range(U.fromDate, U.toDate) + ')</div>';
-      yesL = 'החלף רק ביום הזה'; altL = 'החלף לכל הנסיעות';
-    }
+    var A = T.carId, B = U.carId;
+    var rowOn = function (user, car, d) { var f = null; S.data.requests.forEach(function (r) { if (!f && r.status === 'approved' && r.userName === user && r.carId === car && r.fromDate <= d && r.toDate >= d) f = r; }); return f; };
+    var both = function (d) { return rowOn(T.userName, A, d) && rowOn(U.userName, B, d); };
+    var D = [srcDay], dd;
+    for (dd = addDays(srcDay, -1); D.length < 90 && both(dd); dd = addDays(dd, -1)) D.unshift(dd);
+    for (dd = addDays(srcDay, 1); D.length < 90 && both(dd); dd = addDays(dd, 1)) D.push(dd);
+    var build = function (days) {
+      var m = {}, out = [];
+      days.forEach(function (d) {
+        [[rowOn(T.userName, A, d), B], [rowOn(U.userName, B, d), A]].forEach(function (p) {
+          var r = p[0]; if (!m[r.id]) { m[r.id] = { id: r.id, carId: p[1], days: [] }; out.push(m[r.id]); } m[r.id].days.push(d);
+        });
+      });
+      return out;
+    };
+    oneDay = build([srcDay]);
+    text = 'ב<b>' + dayTxt + '</b>: <b>' + esc(T.userName) + '</b> יקבל את <b>' + carName(B) + '</b>, ו<b>' + esc(U.userName) + '</b> יקבל את <b>' + carName(A) + '</b>.';
+    if (D.length > 1) {
+      whole = build(D);
+      text += '<div class="muted" style="margin-top:6px">שניהם נוסעים ברכבים האלה גם ב-' + range(D[0], D[D.length - 1]) + '. אפשר להחליף רק ביום הזה או בכל הימים האלה</div>';
+      yesL = 'רק ביום הזה'; altL = 'בכל הימים (' + range(D[0], D[D.length - 1]) + ')';
+    } else whole = oneDay;
   } else {
     var nf = addDays(T.fromDate, delta), nt = addDays(T.toDate, delta);
     var parts = [];
@@ -1254,11 +1266,11 @@ function dropTrip(rid, srcDay, srcCar, target) {
     if (!ans) return;
     var changes = oneDay && ans === true ? oneDay : whole;
     var backup = JSON.parse(JSON.stringify(S.data.requests));
-    if (changes === whole) { changes.forEach(function (c) { var q = reqById(c.id); q.carId = c.carId; q.fromDate = c.fromDate; q.toDate = c.toDate; }); renderAdmin(); }
+    if (!changes[0].days && !changes[0].day) { changes.forEach(function (c) { var q = reqById(c.id); q.carId = c.carId; q.fromDate = c.fromDate; q.toDate = c.toDate; }); renderAdmin(); }
     else msg($('aMsg'), 'שומר…', true);
     api('assignCars', { changes: changes }).then(function (r) {
       if (!r.ok) { S.data.requests = backup; renderAdmin(); msg($('aMsg'), r.message); window.scrollTo(0, 0); return; }
-      msg($('aMsg'), U ? 'הרכבים הוחלפו. העובדים קיבלו עדכון' : changes === whole ? 'הנסיעה הועברה. העובד קיבל עדכון' : 'הרכב הוחלף ליום הזה. העובד קיבל עדכון', true);
+      msg($('aMsg'), U ? 'הרכבים הוחלפו. העובדים קיבלו עדכון' : !changes[0].day ? 'הנסיעה הועברה. העובד קיבל עדכון' : 'הרכב הוחלף ליום הזה. העובד קיבל עדכון', true);
       if (r.data) applyAdmin(r); else loadAdmin();
     });
   });
