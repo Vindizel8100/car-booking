@@ -501,6 +501,32 @@ function reportKm(me, q) {
   return { ok: true, km: km, next: next, left: left };
 }
 
+/* ---------- תזכורת בוקר לדיווח קילומטראז' ----------
+   רצה כל יום ב-8:00 (טריגר זמן). כדי להפעיל: להריץ פעם אחת את installTriggers מהעורך. */
+function kmReminderTargets() {
+  var today = Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd'), seen = {}, out = [];
+  readRows('Requests').forEach(function (r) {
+    if (r.status !== 'approved' || !r.carId || r.fromDate > today || r.toDate < today || seen[r.userName]) return;
+    seen[r.userName] = 1;
+    out.push({ userName: r.userName, car: carNameOf(r.carId), destination: r.destination });
+  });
+  return out;
+}
+function morningKmReminder() {
+  kmReminderTargets().forEach(function (t) {
+    notify(t.userName, 'בוקר טוב – דיווח קילומטראז\'', 'אתה משובץ היום ל' + t.car + ' (' + t.destination + '). לחץ כאן ודווח את הקילומטראז\' לפני היציאה', 'km');
+  });
+  flushNotices();
+}
+/* להרצה מהעורך: מראה ביומן למי תישלח התזכורת היום, בלי לשלוח */
+function previewKmReminder() { Logger.log(JSON.stringify(kmReminderTargets())); }
+/* להרצה פעם אחת מהעורך: יוצר את הטריגר היומי (ומוחק כפילויות) */
+function installTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'morningKmReminder') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('morningKmReminder').timeBased().everyDays(1).atHour(8).nearMinute(0).inTimezone('Asia/Jerusalem').create();
+  Logger.log('הטריגר נוצר: תזכורת קילומטראז׳ כל יום ב-8:00');
+}
+
 /* ---------- תקלות לתיקון ---------- */
 function reportFault(me, q) {
   var car = findRow('Cars', 'id', q.carId);
