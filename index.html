@@ -80,6 +80,7 @@ h2{margin:0 0 6px;font-size:19px;font-weight:800}
 .gc.free{background:var(--bg);border:1px solid var(--line);color:var(--muted)}
 .gc.busy{background:var(--busy);color:var(--accent-d);font-weight:700}
 .gcar{display:block;font-size:11px;font-weight:500;color:var(--accent-d);opacity:.85;margin-top:2px}
+.admin-board .gc.busy{cursor:grab;touch-action:none;user-select:none}
 .gc.maint{background:repeating-linear-gradient(45deg,#E7E2D6,#E7E2D6 6px,#F3EFE6 6px,#F3EFE6 12px);color:#5B4A2A;font-weight:700}
 .gc.wait{background:var(--warn-bg);color:var(--warn);border:1px dashed #B07A10}
 .gname{font-weight:700;font-size:14px;display:flex;align-items:center;padding:0 4px}
@@ -151,9 +152,19 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
   </div>
 </div>
 
+<!-- חלון אישור -->
+<div id="confirmBox" class="hidden" role="alertdialog" aria-labelledby="cbTitle" style="position:fixed;inset:0;background:rgba(22,32,42,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px">
+  <div class="card stack" style="max-width:440px;width:100%;gap:14px">
+    <h2 id="cbTitle" style="margin:0"></h2>
+    <div id="cbText" style="font-size:16px;line-height:1.5"></div>
+    <div style="display:flex;gap:8px"><button class="btn" type="button" id="cbYes">כן, בצע</button><button class="btn ghost" type="button" id="cbNo">ביטול</button></div>
+  </div>
+</div>
+
 <!-- עובד: בקשה חדשה -->
 <section id="vNew" class="wrap hidden">
   <form id="newForm" class="stack">
+    <div id="resubBanner" class="note hidden" style="flex-direction:column;gap:6px"></div>
     <div class="row2">
       <label class="f">מתאריך<input class="i" type="date" id="nFrom" required></label>
       <label class="f">עד תאריך<input class="i" type="date" id="nTo" required></label>
@@ -182,6 +193,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
         <button class="btn ghost sm" type="button" id="wNext">שבוע הבא ←</button>
       </div>
     </div>
+    <p class="muted admin-only hidden" id="dragHint" style="margin:0">💡 אפשר לגרור נסיעה ליום אחר, לרכב פנוי אחר, או על נסיעה של עובד אחר באותו יום כדי להחליף ביניהם רכבים.</p>
     <div class="legend"><span><i class="sw" style="background:var(--busy)"></i>משובץ</span><span id="legWait"><i class="sw" style="background:var(--warn-bg);border:1px dashed #B07A10"></i>בקשה ממתינה</span><span><i class="sw" style="background:repeating-linear-gradient(45deg,#E7E2D6,#E7E2D6 4px,#F3EFE6 4px,#F3EFE6 8px)"></i>בטיפול</span><span><i class="sw" style="background:var(--bg);border:1px solid var(--line)"></i>פנוי</span></div>
     <div class="board"><div class="grid" id="grid"></div></div>
   </div>
@@ -212,8 +224,23 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
       </form>
     </div>
     <div class="card"><h2>בקשות ממתינות</h2><div id="pendList"></div></div>
+    <div class="card hidden" id="rejCard"><h2>בקשות שנדחו</h2><p class="muted" style="margin:0 0 6px">אפשר לאשר אותן בכל זאת, להחזיר להמתנה או לערוך</p><div id="rejList"></div></div>
     <div class="card hidden" id="cancCard"><h2>ביטולים של נסיעות מאושרות</h2><p class="muted" style="margin:0 0 6px">הרכבים האלה התפנו כי העובד ביטל את הנסיעה</p><div id="cancList"></div></div>
     <div class="card"><div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">שיבוצים קרובים</h2><button class="btn ok sm" type="button" id="aSaveAll" disabled>שמור הכל</button></div><div id="assignErr" class="msg err hidden" style="margin-bottom:8px"></div><div id="apprList"></div></div>
+  </div>
+  <div id="aHist" class="stack hidden">
+    <div class="card stack" style="gap:10px">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+        <label class="f" style="flex:2 1 200px">חיפוש<input class="i" id="hSearch" placeholder="שם, יעד, רכב, פרויקט…"></label>
+        <label class="f" style="flex:1 1 150px">עובד<select class="i" id="hUser"><option value="">כולם</option></select></label>
+        <label class="f" style="flex:1 1 150px">פעולה<select class="i" id="hAct"><option value="">הכול</option></select></label>
+        <label class="f" style="flex:1 1 140px">מתאריך<input class="i" type="date" id="hFrom"></label>
+        <label class="f" style="flex:1 1 140px">עד תאריך<input class="i" type="date" id="hTo"></label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="muted" id="hCount" style="flex:1"></span><button class="btn ghost sm" type="button" id="hClear">נקה סינון</button><button class="btn ghost sm" type="button" id="hCsv">ייצוא לאקסל</button></div>
+    </div>
+    <div class="card" style="padding:8px 12px"><div style="overflow-x:auto"><table class="t" style="min-width:720px"><thead><tr><th style="width:130px">מתי</th><th style="width:150px">פעולה</th><th style="width:120px">עובד</th><th>פרטים</th><th style="width:110px">בוצע ע״י</th></tr></thead><tbody id="hList"></tbody></table></div>
+      <div style="text-align:center;padding:10px"><button class="btn ghost sm hidden" type="button" id="hMore">הצג עוד</button></div></div>
   </div>
   <div id="aUsers" class="stack hidden">
     <form class="card stack" id="uForm">
@@ -258,7 +285,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-22-3';
+var APP_VERSION = '2026-11-24-1';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -336,26 +363,26 @@ function start() {
   show($('vLogin'), false); show($('topBar'), true); show($('loading'), false);
   $('hello').textContent = 'שלום, ' + S.name;
   var tabs = S.role === 'admin'
-    ? [['req', 'בקשות'], ['board', 'לוח רכבים'], ['users', 'עובדים'], ['cars', 'רכבים']]
+    ? [['req', 'בקשות'], ['board', 'לוח רכבים'], ['hist', 'היסטוריה'], ['users', 'עובדים'], ['cars', 'רכבים']]
     : [['new', 'בקשה חדשה'], ['mine', 'הבקשות שלי'], ['board', 'לוח רכבים']];
   $('tabs').innerHTML = tabs.map(function (t) { return '<button type="button" class="tab" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
   var qv = (location.search.match(/[?&]view=(\w+)/) || [])[1];
-  var allowed = S.role === 'admin' ? ['req', 'board', 'users', 'cars'] : ['new', 'mine', 'board'];
+  var allowed = S.role === 'admin' ? ['req', 'board', 'hist', 'users', 'cars'] : ['new', 'mine', 'board'];
   go(allowed.indexOf(qv) >= 0 ? qv : (S.role === 'admin' ? 'req' : 'new'));
   if (S.role !== 'admin') loadMine();
   pushAfterLogin();
 }
 $('tabs').addEventListener('click', function (e) { var v = e.target.getAttribute('data-v'); if (v) go(v); });
 
-var TITLES = { new: 'בקשת רכב חדשה', mine: 'הבקשות שלי', req: 'ניהול בקשות', board: 'לוח רכבים', users: 'עובדים', cars: 'רכבים' };
+var TITLES = { new: 'בקשת רכב חדשה', mine: 'הבקשות שלי', req: 'ניהול בקשות', board: 'לוח רכבים', hist: 'היסטוריה', users: 'עובדים', cars: 'רכבים' };
 function go(v, noFetch) {
   S.view = v;
   $('pageTitle').textContent = TITLES[v];
   Array.prototype.forEach.call($('tabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-v') === v); });
   show($('vNew'), v === 'new'); show($('vMine'), v === 'mine');
   show($('vAdmin'), S.role === 'admin');
-  show($('aReq'), v === 'req'); show($('vBoard'), v === 'board'); show($('aUsers'), v === 'users'); show($('aCars'), v === 'cars');
-  show($('legWait'), S.role === 'admin');
+  show($('aReq'), v === 'req'); show($('vBoard'), v === 'board'); show($('aUsers'), v === 'users'); show($('aHist'), v === 'hist'); if (v === 'hist' && !noFetch) loadHistory(); show($('aCars'), v === 'cars');
+  show($('legWait'), S.role === 'admin'); show($('dragHint'), S.role === 'admin');
   if (v === 'board' && S.role !== 'admin') { if (S.board) renderBoard(); else $('grid').innerHTML = '<div class="center" style="grid-column:1/-1"><span class="spin"></span></div>'; if (!noFetch) loadBoard(); }
   if (v === 'new') initNew();
   if (v === 'mine') { if (S.mine) renderMine(); if (!noFetch) loadMine(); }
@@ -364,6 +391,12 @@ function go(v, noFetch) {
 }
 
 /* ---- עובד ---- */
+document.addEventListener('click', function (e) {
+  if (e.target.id !== 'resubCancel') return;
+  e.preventDefault(); endResubmit();
+  ['nDest', 'nProj', 'nNotes', 'nFrom', 'nTo'].forEach(function (id) { $(id).value = ''; }); initNew();
+});
+function endResubmit() { S.resubmit = null; show($('resubBanner'), false); $('nBtn').textContent = 'שלח בקשה'; }
 function initNew() {
   var t = new Date(); t.setDate(t.getDate() + 1);
   if (!$('nFrom').value) { $('nFrom').value = iso(t); $('nTo').value = iso(t); }
@@ -379,6 +412,20 @@ $('newForm').addEventListener('submit', function (e) {
     destination: $('nDest').value.trim(), project: $('nProj').value.trim(), notes: $('nNotes').value.trim() };
   if (!q.destination) return msg($('nMsg'), 'יש למלא לאן הנסיעה');
   if (q.toDate < q.fromDate) return msg($('nMsg'), 'תאריך הסיום לפני תאריך ההתחלה');
+  if (S.resubmit) {
+    var rid = S.resubmit; q.id = rid;
+    var old = null; S.mine.requests.forEach(function (x) { if (x.id === rid) old = x; });
+    var backupR = old ? JSON.parse(JSON.stringify(old)) : null;
+    if (old) { old.fromDate = q.fromDate; old.toDate = q.toDate; old.departTime = q.departTime; old.destination = q.destination; old.project = q.project; old.notes = q.notes; old.status = 'pending'; old.adminNote = ''; old.sending = true; }
+    endResubmit();
+    ['nDest', 'nProj', 'nNotes', 'nFrom', 'nTo'].forEach(function (id) { $(id).value = ''; });
+    go('mine', true);
+    api('resubmitRequest', q).then(function (r) {
+      if (!r.ok) { if (old && backupR) { Object.keys(backupR).forEach(function (k) { old[k] = backupR[k]; }); delete old.sending; } renderMine(); $('mineList').insertAdjacentHTML('afterbegin', '<div class="msg err">' + esc(r.message) + '</div>'); return; }
+      applyMine(r);
+    });
+    return;
+  }
   var now = new Date();
   var local = { id: 'tmp' + Date.now(), userName: S.name, fromDate: q.fromDate, toDate: q.toDate, departTime: q.departTime, destination: q.destination,
     project: q.project, notes: q.notes, status: 'pending', carId: '', adminNote: '', createdAt: iso(now) + ' ' + ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2), sending: true };
@@ -471,6 +518,7 @@ function renderMine() {
       (canCancel(q) ? '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="btn ghost sm" type="button" data-cancel="' + q.id + '">' + (q.status === 'approved' ? 'הנסיעה התבטלה – החזר את הרכב' : 'ביטול הבקשה') + '</button>' +
         (futureDays(q).length > 1 || (q.fromDate !== q.toDate && futureDays(q).length) ? '<button class="btn ghost sm" type="button" data-days="' + q.id + '">ביטול ימים מסוימים</button>' : '') + '</div>' : '') +
+      (q.status === 'rejected' && q.toDate >= iso(new Date()) ? '<div><button class="btn sm" type="button" data-resub="' + q.id + '">ערוך והגש שוב</button></div>' : '') +
       (S.daysOpen === q.id && canCancel(q) ? '<div class="stack" style="gap:6px;background:var(--bg);border-radius:12px;padding:12px">' +
         '<b style="font-size:15px">סמן את הימים שבהם לא צריך את הרכב</b>' +
         futureDays(q).map(function (d) { return '<label class="check" style="color:var(--ink)"><input type="checkbox" data-day="' + d + '"> ' + dayName(d) + ' ' + ltr(dm(d)) + '</label>'; }).join('') +
@@ -480,6 +528,17 @@ function renderMine() {
 }
 $('mineList').addEventListener('click', function (e) {
   var t = e.target;
+  if (t.hasAttribute('data-resub')) {
+    var rq = null; S.mine.requests.forEach(function (x) { if (x.id === t.getAttribute('data-resub')) rq = x; });
+    if (!rq) return;
+    S.resubmit = rq.id;
+    $('nFrom').value = rq.fromDate < iso(new Date()) ? iso(new Date()) : rq.fromDate; $('nTo').value = rq.toDate; $('nTime').value = rq.departTime || '07:30';
+    $('nDest').value = rq.destination; $('nProj').value = rq.project; $('nNotes').value = rq.notes;
+    $('resubBanner').innerHTML = '<b>עריכת בקשה שנדחתה</b><span>סיבת הדחייה: ' + esc(rq.adminNote || '—') + '</span><span>תקן את מה שצריך ולחץ "הגש שוב". <a href="#" id="resubCancel">ביטול העריכה</a></span>';
+    show($('resubBanner'), true); $('nBtn').textContent = 'הגש שוב';
+    go('new', true);
+    return;
+  }
   if (t.hasAttribute('data-days')) { S.daysOpen = S.daysOpen === t.getAttribute('data-days') ? null : t.getAttribute('data-days'); renderMine(); return; }
   if (t.hasAttribute('data-days-close')) { S.daysOpen = null; renderMine(); return; }
   if (t.hasAttribute('data-days-go')) {
@@ -658,11 +717,11 @@ $('apprList').addEventListener('change', function (e) {
   setDraft(q, 'carId', e.target.value);
   renderAssign(); renderBoard();
 });
-$('apprList').addEventListener('click', function (e) {
+function tripClick(e) {
   var t = e.target, row = t.closest('.arow'); if (!row) return;
   var id = row.getAttribute('data-id');
-  if (t.hasAttribute('data-edit-trip')) { S.editTrip = S.editTrip === id ? null : id; renderAssign(); return; }
-  if (t.hasAttribute('data-trip-close')) { S.editTrip = null; renderAssign(); return; }
+  if (t.hasAttribute('data-edit-trip')) { S.editTrip = S.editTrip === id ? null : id; renderAssign(); renderRejected(); return; }
+  if (t.hasAttribute('data-trip-close')) { S.editTrip = null; renderAssign(); renderRejected(); return; }
   if (t.hasAttribute('data-trip-save')) {
     var body = { id: id };
     row.querySelectorAll('[data-trip-form] [data-k]').forEach(function (el) { body[el.getAttribute('data-k')] = el.value; });
@@ -674,7 +733,8 @@ $('apprList').addEventListener('click', function (e) {
       if (r.data) applyAdmin(r); else loadAdmin();
     });
   }
-});
+}
+$('apprList').addEventListener('click', tripClick);
 $('aSaveAll').addEventListener('click', function () {
   var ids = Object.keys(assignDraft); if (!ids.length || assignProblems().msgs.length) return;
   var changes = ids.map(function (id) {
@@ -731,6 +791,162 @@ $('mForm').addEventListener('submit', function (e) {
     window.scrollTo(0, 0);
   });
 });
+/* ---- בקשות שנדחו: אפשר לאשר בכל זאת, להחזיר להמתנה או לערוך ---- */
+function renderRejected() {
+  var today = iso(new Date());
+  var list = S.data.requests.filter(function (r) { return r.status === 'rejected' && r.toDate >= today; }).sort(function (a, b) { return a.fromDate < b.fromDate ? -1 : 1; });
+  show($('rejCard'), list.length > 0);
+  $('rejList').innerHTML = list.map(function (q) {
+    var free = freeCars(q);
+    return '<div class="arow" data-id="' + q.id + '">' +
+      '<div class="c"><b>' + esc(q.userName) + '</b><span class="muted">' + esc(q.destination) + (q.project ? ' · פרויקט ' + esc(q.project) : '') + '</span></div>' +
+      '<div class="c"><b style="font-weight:500">' + range(q.fromDate, q.toDate) + ' · ' + dayName(q.fromDate) + '</b><span class="muted">סיבת הדחייה: ' + esc(q.adminNote || '—') + '</span></div>' +
+      '<div class="acts"><label class="f" style="font-size:13px;color:var(--muted)">רכב פנוי<select class="i" data-car>' + (free.length ? free.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }).join('') : '<option value="">אין רכב פנוי</option>') + '</select></label>' +
+      '<input class="i" data-note placeholder="הערה לעובד (לא חובה)" style="width:180px">' +
+      '<button class="btn ok sm" type="button" data-act="approve"' + (free.length ? '' : ' disabled') + '>אשר בכל זאת</button>' +
+      '<button class="btn ghost sm" type="button" data-act="unassign">החזר להמתנה</button>' +
+      '<button class="btn ghost sm" type="button" data-edit-trip>ערוך</button></div>' +
+      (S.editTrip === q.id ? tripForm(q) : '') + '</div>';
+  }).join('');
+}
+$('rejList').addEventListener('click', onRowAction);
+$('rejList').addEventListener('click', tripClick);
+$('rejList').addEventListener('change', function (e) {
+  var tf = e.target.closest('[data-trip-form]'); if (!tf) return;
+  var k = e.target.getAttribute('data-k'); if (k !== 'fromDate' && k !== 'toDate') return;
+  var f = tf.querySelector('[data-k=fromDate]'), t = tf.querySelector('[data-k=toDate]');
+  if (!t.value || t.value < f.value) t.value = f.value;
+  var sel = tf.querySelector('[data-k=carId]'), keep = sel.value, id0 = tf.closest('.arow').getAttribute('data-id');
+  sel.innerHTML = '<option value="">בלי רכב (ממתין)</option>' + freeCars({ id: id0, fromDate: f.value, toDate: t.value }).map(function (c) { return '<option value="' + c.id + '"' + (c.id === keep ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('');
+});
+
+/* ---- היסטוריה ---- */
+var histAll = [], histShown = 200;
+var ACT_STYLE = { 'אישור': 'p-approved', 'אישור בקשה שנדחתה': 'p-approved', 'אישור (בעריכה)': 'p-approved', 'הוספה ידנית': 'p-approved', 'דחייה': 'p-rejected', 'ביטול': 'p-cancelled', 'ביטול בקשה': 'p-cancelled', 'ביטול נסיעה מאושרת': 'p-cancelled', 'ביטול ימים': 'p-cancelled', 'בקשה חדשה': 'p-pending', 'הגשה מחדש': 'p-pending', 'החזרה להמתנה': 'p-pending', 'הוספה ידנית (ממתין)': 'p-pending' };
+function loadHistory() {
+  if (!histAll.length) $('hList').innerHTML = '<tr><td colspan="5"><div class="center"><span class="spin"></span></div></td></tr>';
+  api('history').then(function (r) {
+    if (!r.ok) { $('hList').innerHTML = '<tr><td colspan="5" class="muted">' + esc(r.message || 'שגיאה') + '</td></tr>'; return; }
+    histAll = r.events || [];
+    var users = {}, acts = {};
+    histAll.forEach(function (e) { if (e.userName) users[e.userName] = 1; acts[e.action] = 1; });
+    var ku = $('hUser').value, ka = $('hAct').value;
+    $('hUser').innerHTML = '<option value="">כולם</option>' + Object.keys(users).sort(function (a, b) { return a.localeCompare(b, 'he'); }).map(function (u) { return '<option' + (u === ku ? ' selected' : '') + '>' + esc(u) + '</option>'; }).join('');
+    $('hAct').innerHTML = '<option value="">הכול</option>' + Object.keys(acts).sort(function (a, b) { return a.localeCompare(b, 'he'); }).map(function (a) { return '<option' + (a === ka ? ' selected' : '') + '>' + esc(a) + '</option>'; }).join('');
+    renderHistory();
+  });
+}
+function histFiltered() {
+  var s = $('hSearch').value.trim().toLowerCase(), u = $('hUser').value, a = $('hAct').value, f = $('hFrom').value, t = $('hTo').value;
+  return histAll.filter(function (e) {
+    var day = (e.at || '').slice(0, 10);
+    return (!u || e.userName === u) && (!a || e.action === a) && (!f || day >= f) && (!t || day <= t) &&
+      (!s || [e.userName, e.action, e.text, e.by].join(' ').toLowerCase().indexOf(s) >= 0);
+  });
+}
+function fmtAt(at) { if (!at) return ''; var d = at.slice(0, 10).split('-'); return ltr(+d[2] + '.' + +d[1] + '.' + d[0].slice(2) + ' ' + at.slice(11, 16)); }
+function renderHistory() {
+  var list = histFiltered();
+  $('hCount').textContent = list.length + ' רשומות' + (list.length !== histAll.length ? ' (מתוך ' + histAll.length + ')' : '');
+  $('hList').innerHTML = list.length ? list.slice(0, histShown).map(function (e) {
+    return '<tr><td style="white-space:nowrap">' + fmtAt(e.at) + '</td><td><span class="pill ' + (ACT_STYLE[e.action] || 'p-cancelled') + '">' + esc(e.action) + '</span></td><td>' + esc(e.userName || '—') + '</td><td>' + esc(e.text) + '</td><td class="muted">' + esc(e.by || '') + '</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="muted" style="text-align:center">אין רשומות</td></tr>';
+  show($('hMore'), list.length > histShown);
+}
+['hSearch', 'hUser', 'hAct', 'hFrom', 'hTo'].forEach(function (id) { $(id).addEventListener(id === 'hSearch' ? 'input' : 'change', function () { histShown = 200; renderHistory(); }); });
+$('hMore').addEventListener('click', function () { histShown += 300; renderHistory(); });
+$('hClear').addEventListener('click', function () { ['hSearch', 'hUser', 'hAct', 'hFrom', 'hTo'].forEach(function (id) { $(id).value = ''; }); histShown = 200; renderHistory(); });
+$('hCsv').addEventListener('click', function () {
+  var rows = [['מתי', 'פעולה', 'עובד', 'פרטים', 'בוצע ע"י']].concat(histFiltered().map(function (e) { return [e.at, e.action, e.userName, e.text, e.by]; }));
+  var csv = '\ufeff' + rows.map(function (r) { return r.map(function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\r\n');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'היסטוריית-רכבים-' + iso(new Date()) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+});
+
+/* ---- חלון אישור ---- */
+function askConfirm(title, html) {
+  return new Promise(function (resolve) {
+    $('cbTitle').textContent = title; $('cbText').innerHTML = html; show($('confirmBox'), true); $('cbYes').focus();
+    function done(v) { show($('confirmBox'), false); $('cbYes').onclick = $('cbNo').onclick = null; resolve(v); }
+    $('cbYes').onclick = function () { done(true); }; $('cbNo').onclick = function () { done(false); };
+  });
+}
+
+/* ---- גרירה בלוח הרכבים (מנהל) ---- */
+function addDays(s, n) { var d = parse(s); d.setDate(d.getDate() + n); return iso(d); }
+function dayDiff(a, b) { return Math.round((parse(b) - parse(a)) / 86400000); }
+var drag = null;
+$('grid').addEventListener('pointerdown', function (e) {
+  if (S.role !== 'admin' || e.button > 0) return;
+  var cell = e.target.closest('.gc.busy[data-rid]'); if (!cell) return;
+  drag = { cell: cell, x: e.clientX, y: e.clientY, rid: cell.getAttribute('data-rid'), day: cell.getAttribute('data-day'), car: cell.getAttribute('data-car'), ghost: null, over: null, pid: e.pointerId };
+});
+document.addEventListener('pointermove', function (e) {
+  if (!drag || e.pointerId !== drag.pid) return;
+  if (!drag.ghost) {
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 8) return;
+    var g = drag.cell.cloneNode(true);
+    g.style.cssText = 'position:fixed;pointer-events:none;z-index:40;opacity:.9;box-shadow:0 6px 20px rgba(0,0,0,.25);width:' + drag.cell.offsetWidth + 'px;height:' + drag.cell.offsetHeight + 'px';
+    document.body.appendChild(g); drag.ghost = g; drag.cell.style.opacity = '.35';
+    document.body.style.userSelect = 'none';
+  }
+  e.preventDefault();
+  drag.ghost.style.left = (e.clientX - drag.cell.offsetWidth / 2) + 'px'; drag.ghost.style.top = (e.clientY - drag.cell.offsetHeight / 2) + 'px';
+  var el = document.elementFromPoint(e.clientX, e.clientY), over = el && el.closest('#grid .gc[data-day]');
+  if (drag.over && drag.over !== over) drag.over.style.boxShadow = '';
+  if (over && over !== drag.cell) over.style.boxShadow = 'inset 0 0 0 3px var(--accent)';
+  drag.over = over;
+}, { passive: false });
+document.addEventListener('pointerup', function (e) {
+  if (!drag || e.pointerId !== drag.pid) return;
+  var d = drag; drag = null;
+  document.body.style.userSelect = '';
+  if (!d.ghost) return;
+  d.ghost.remove(); d.cell.style.opacity = ''; if (d.over) d.over.style.boxShadow = '';
+  if (!d.over || d.over === d.cell) return;
+  dropTrip(d.rid, d.day, d.car, d.over);
+});
+document.addEventListener('pointercancel', function () { if (drag) { if (drag.ghost) drag.ghost.remove(); drag.cell.style.opacity = ''; if (drag.over) drag.over.style.boxShadow = ''; drag = null; } });
+
+function reqById(id) { var q = null; S.data.requests.forEach(function (x) { if (x.id === id) q = x; }); return q; }
+function dropTrip(rid, srcDay, srcCar, target) {
+  if (Object.keys(assignDraft).length) { msg($('aMsg'), 'יש שינויים שלא נשמרו ב"שיבוצים קרובים". שמור אותם או בטל אותם לפני גרירה בלוח'); window.scrollTo(0, 0); return; }
+  var T = reqById(rid); if (!T) return;
+  var tDay = target.getAttribute('data-day'), tCar = target.getAttribute('data-car');
+  if (target.hasAttribute('data-maint')) { msg($('aMsg'), (carById(tCar) || {}).name + ' בטיפול ביום הזה'); window.scrollTo(0, 0); return; }
+  var delta = dayDiff(srcDay, tDay), uid = target.getAttribute('data-rid'), U = uid && uid !== rid ? reqById(uid) : null;
+  var carName = function (id) { return esc((carById(id) || {}).name || ''); };
+  var changes, title, text;
+  if (U) {
+    if (delta !== 0) { msg($('aMsg'), 'כדי להחליף רכבים בין עובדים, גרור לאותו יום ברכב השני'); window.scrollTo(0, 0); return; }
+    title = 'להחליף רכבים בין העובדים?';
+    text = '<b>' + esc(T.userName) + '</b> (' + range(T.fromDate, T.toDate) + ') יקבל את <b>' + carName(U.carId) + '</b><br><b>' + esc(U.userName) + '</b> (' + range(U.fromDate, U.toDate) + ') יקבל את <b>' + carName(T.carId) + '</b>';
+    changes = [{ id: T.id, carId: U.carId, fromDate: T.fromDate, toDate: T.toDate }, { id: U.id, carId: T.carId, fromDate: U.fromDate, toDate: U.toDate }];
+  } else {
+    var nf = addDays(T.fromDate, delta), nt = addDays(T.toDate, delta);
+    var parts = [];
+    if (tCar !== T.carId) parts.push('לרכב <b>' + carName(tCar) + '</b> (במקום ' + carName(T.carId) + ')');
+    if (delta) parts.push('לתאריך <b>' + range(nf, nt) + '</b> (במקום ' + range(T.fromDate, T.toDate) + ')');
+    if (!parts.length) return;
+    title = 'להעביר את הנסיעה?';
+    text = 'הנסיעה של <b>' + esc(T.userName) + '</b> ל' + esc(T.destination) + ' תועבר ' + parts.join(' ו') + (delta && T.fromDate !== T.toDate ? '<div class="muted" style="margin-top:6px">כל ימי הנסיעה יוזזו יחד</div>' : '');
+    changes = [{ id: T.id, carId: tCar, fromDate: nf, toDate: nt }];
+  }
+  askConfirm(title, text).then(function (yes) {
+    if (!yes) return;
+    var backup = JSON.parse(JSON.stringify(S.data.requests));
+    changes.forEach(function (c) { var q = reqById(c.id); q.carId = c.carId; q.fromDate = c.fromDate; q.toDate = c.toDate; });
+    renderAdmin();
+    api('assignCars', { changes: changes }).then(function (r) {
+      if (!r.ok) { S.data.requests = backup; renderAdmin(); msg($('aMsg'), r.message); window.scrollTo(0, 0); return; }
+      msg($('aMsg'), U ? 'הרכבים הוחלפו. שני העובדים קיבלו עדכון' : 'הנסיעה הועברה. העובד קיבל עדכון', true);
+      if (r.data) applyAdmin(r); else loadAdmin();
+    });
+  });
+}
+
 function renderAdmin() {
   var d = S.data, today = iso(new Date()), tom = new Date(); tom.setDate(tom.getDate() + 1); tom = iso(tom);
   var pend = d.requests.filter(function (r) { return r.status === 'pending'; }).sort(function (a, b) { return a.fromDate < b.fromDate ? -1 : 1; });
@@ -763,7 +979,7 @@ function renderAdmin() {
       '<div class="c"><span class="pill p-cancelled" style="align-self:flex-start">' + esc(c ? c.name : '') + ' התפנה</span></div></div>';
   }).join('');
   renderAssign();
-  renderBoard(); renderUsers(); renderCars(); renderMaint();
+  renderRejected(); renderBoard(); renderUsers(); renderCars(); renderMaint();
   if (!$('mForm').classList.contains('hidden')) fillManual();
 }
 
@@ -817,8 +1033,8 @@ function renderBoard() {
       var a = reqs.filter(function (r) { var e = eff(r); return r.status === 'approved' && e.carId === c.id && e.fromDate <= d && e.toDate >= d; })[0];
       var mt = maintOf(c.id, d, d);
       if (mt && a && admin) { h += '<div class="gc" style="background:var(--bad-bg);color:var(--bad);font-weight:700"><span>בטיפול!<small class="gcar" style="color:var(--bad)">אבל משובץ ל' + esc(a.userName) + '</small></span></div>'; return; }
-      if (mt) { h += '<div class="gc maint"><span>בטיפול' + (mt.note ? '<small class="gcar" style="color:#5B4A2A">' + esc(mt.note) + '</small>' : '') + '</span></div>'; return; }
-      h += a ? '<div class="gc busy' + (a.userName === S.name && !admin ? '" style="outline:2px solid var(--accent)' : '') + '" title="' + esc(a.destination) + '"><span>' + esc(a.userName) + '<small class="gcar">' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</small>' + (a.destination ? '<small class="gcar">' + esc(a.destination) + '</small>' : '') + '</span></div>' : '<div class="gc free">פנוי</div>';
+      if (mt) { h += '<div class="gc maint" data-maint="1" data-day="' + d + '" data-car="' + c.id + '"><span>בטיפול' + (mt.note ? '<small class="gcar" style="color:#5B4A2A">' + esc(mt.note) + '</small>' : '') + '</span></div>'; return; }
+      h += a ? '<div class="gc busy' + (a.userName === S.name && !admin ? '" style="outline:2px solid var(--accent)' : '') + '" data-rid="' + a.id + '" data-day="' + d + '" data-car="' + c.id + '" title="' + (admin ? 'גרור כדי להעביר יום או רכב' : esc(a.destination)) + '"><span>' + esc(a.userName) + '<small class="gcar">' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</small>' + (a.destination ? '<small class="gcar">' + esc(a.destination) + '</small>' : '') + '</span></div>' : '<div class="gc free" data-day="' + d + '" data-car="' + c.id + '">פנוי</div>';
     });
   });
   if (!admin) { $('grid').innerHTML = h; return; }
@@ -826,6 +1042,7 @@ function renderBoard() {
   h += '<div class="gname" style="color:var(--warn)">ממתינים</div>';
   waiting.forEach(function (w) { h += w.length ? '<div class="gc wait">' + w.map(function (r) { return esc(r.userName); }).join('<br>') + '</div>' : '<div class="gc free">—</div>'; });
   $('grid').innerHTML = h;
+  $('grid').classList.toggle('admin-board', admin);
 }
 $('wPrev').addEventListener('click', function () { S.week--; renderBoard(); });
 $('wNext').addEventListener('click', function () { S.week++; renderBoard(); });
