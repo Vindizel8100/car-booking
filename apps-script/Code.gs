@@ -23,7 +23,7 @@ var SHEETS = {
   Mileage: ['id', 'at', 'userName', 'carId', 'km', 'note'],
   Faults: ['id', 'at', 'userName', 'carId', 'text', 'status', 'closedAt', 'closedBy'],
   Requests: ['id', 'userName', 'fromDate', 'toDate', 'departTime', 'destination', 'project', 'notes',
-             'status', 'carId', 'adminNote', 'createdAt', 'decidedAt', 'decidedBy']
+             'status', 'carId', 'adminNote', 'createdAt', 'decidedAt', 'decidedBy', 'dayDest']
 };
 
 /* ---------- התקנה ---------- */
@@ -195,7 +195,7 @@ function createRequest(me, q) {
     id: nid,
     userName: me.name, fromDate: from, toDate: to,
     departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), notes: clip(q.notes, 300),
-    status: 'pending', carId: '', adminNote: '', createdAt: nowStr(), decidedAt: '', decidedBy: ''
+    status: 'pending', carId: '', adminNote: '', createdAt: nowStr(), decidedAt: '', decidedBy: '', dayDest: cleanDayDest(q.dayDest, from, to)
   });
   notifyAdmins('בקשה חדשה מ' + me.name + ': ' + rangeTxt(from, to) + ' · ' + dest + (q.project ? ' · פרויקט ' + clip(q.project, 40) : ''), me.name);
   hist('בקשה חדשה', me.name, rangeTxt(from, to) + ' · ' + dest + (q.project ? ' · פרויקט ' + clip(q.project, 40) : ''), nid);
@@ -233,15 +233,16 @@ function cancelDays(me, id, days) {
   if (!keep.length) return cancelRequest(me, id);
 
   var keepRuns = runs(keep), dropRuns = runs(dropped);
-  updateRow('Requests', r.row, { fromDate: keepRuns[0][0], toDate: keepRuns[0][1] });
+  var first = trimDest({ fromDate: keepRuns[0][0], toDate: keepRuns[0][1], destination: q.destination, dayDest: q.dayDest });
+  updateRow('Requests', r.row, first);
   for (var i = 1; i < keepRuns.length; i++) {
     var copy = JSON.parse(JSON.stringify(q));
     copy.id = newId(); copy.fromDate = keepRuns[i][0]; copy.toDate = keepRuns[i][1];
-    appendRow('Requests', copy);
+    appendRow('Requests', trimDest(copy));
   }
   dropRuns.forEach(function (run) {
     var c = JSON.parse(JSON.stringify(q));
-    c.id = newId(); c.fromDate = run[0]; c.toDate = run[1];
+    c.id = newId(); c.fromDate = run[0]; c.toDate = run[1]; trimDest(c);
     c.status = 'cancelled'; c.carId = q.status === 'approved' ? q.carId : '';
     c.adminNote = 'בוטל חלקית'; c.decidedAt = nowStr(); c.decidedBy = me.name;
     appendRow('Requests', c);
@@ -332,8 +333,10 @@ function adminEdit(me, q) {
   else if (ct && carId) notify(oldQ.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + dest + ': ' + ct);
   else if (oldQ.status === 'rejected' && !carId) notify(oldQ.userName, 'עדכון בבקשת הרכב', 'הבקשה שנדחתה הוחזרה לטיפול: ' + tripTxt(newQ));
   hist(oldQ.status !== 'approved' && carId ? 'אישור (בעריכה)' : 'עריכה', oldQ.userName, 'נסיעה ל' + dest + ': ' + (ct || 'עודכנו פרטים') + (oldQ.status === 'rejected' ? ' (בקשה שנדחתה)' : ''), oldQ.id);
+  var dd = '';
+  if (dest === oldQ.destination && oldQ.dayDest) { var tq = trimDest({ fromDate: from, toDate: to, destination: dest, dayDest: oldQ.dayDest }); dd = tq.dayDest; dest = tq.destination; }
   updateRow('Requests', r.row, {
-    fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest,
+    dayDest: dd, fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest,
     project: clip(q.project, 40), notes: clip(q.notes, 300), adminNote: clip(q.adminNote, 200),
     carId: carId, status: carId ? 'approved' : 'pending', decidedAt: nowStr(), decidedBy: me.name
   });
@@ -347,10 +350,24 @@ function assignCars(me, changes) {
   var all = readRows('Requests'), byId = {}, before = {};
   all.forEach(function (x) { byId[x.id] = x; before[x.id] = JSON.parse(JSON.stringify(x)); });
   var cars = {}; readRows('Cars').forEach(function (c) { if (c.active === 'yes') cars[c.id] = c; });
+  var adds = [], split = {}, checks = [];
   for (var i = 0; i < changes.length; i++) {
     var ch = changes[i], x = byId[ch.id];
     if (!x || x.status !== 'approved') return { ok: false, message: 'אחת הנסיעות כבר לא מאושרת. רענן את הדף' };
     if (!cars[ch.carId]) return { ok: false, message: 'יש לבחור רכב לנסיעה של ' + x.userName };
+    var day = cleanDate(ch.day);
+    if (day && x.fromDate !== x.toDate) { // החלפת רכב ליום אחד בלבד מתוך נסיעה של כמה ימים
+      if (day < x.fromDate || day > x.toDate) return { ok: false, message: 'היום לא נמצא בנסיעה של ' + x.userName + '. רענן את הדף' };
+      var orig = JSON.parse(JSON.stringify(x));
+      var rr = runs(dateList(x.fromDate, x.toDate).filter(function (d) { return d !== day; }));
+      var piece = JSON.parse(JSON.stringify(orig)); piece.id = newId(); piece.fromDate = piece.toDate = day; piece.carId = ch.carId; trimDest(piece);
+      x.fromDate = rr[0][0]; x.toDate = rr[0][1]; x.destination = orig.destination; x.dayDest = orig.dayDest; trimDest(x);
+      for (var j = 1; j < rr.length; j++) { var ex = JSON.parse(JSON.stringify(orig)); ex.id = newId(); ex.fromDate = rr[j][0]; ex.toDate = rr[j][1]; trimDest(ex); adds.push(ex); all.push(ex); }
+      adds.push(piece); all.push(piece); checks.push(piece);
+      split[x.id] = { piece: piece, orig: orig };
+      continue;
+    }
+    checks.push(x);
     x.carId = ch.carId;
     if (ch.fromDate || ch.toDate) {
       var f = cleanDate(ch.fromDate || x.fromDate), t = cleanDate(ch.toDate || x.toDate);
@@ -364,17 +381,25 @@ function assignCars(me, changes) {
     if (p.carId === q.carId && p.fromDate <= q.toDate && p.toDate >= q.fromDate)
       return { ok: false, message: cars[p.carId].name + ' משובץ גם ל' + p.userName + ' וגם ל' + q.userName + ' באותם ימים. תקן ונסה שוב' };
   }
-  for (var k = 0; k < changes.length; k++) {
-    var xc = byId[changes[k].id], mt = maintClash(xc.carId, xc.fromDate, xc.toDate);
+  for (var k = 0; k < checks.length; k++) {
+    var xc = checks[k], mt = maintClash(xc.carId, xc.fromDate, xc.toDate);
     if (mt) return { ok: false, message: maintMsg(cars[xc.carId].name, mt) + ' – בנסיעה של ' + xc.userName };
   }
   changes.forEach(function (ch) {
     var r = findRow('Requests', 'id', ch.id);
-    var x = byId[ch.id];
+    var x = byId[ch.id], sp = split[ch.id];
+    if (sp) {
+      updateRow('Requests', r.row, { fromDate: x.fromDate, toDate: x.toDate, destination: x.destination, dayDest: x.dayDest });
+      var t = 'ב-' + dmy(sp.piece.fromDate) + ' בלבד: רכב ' + carNameOf(sp.orig.carId) + ' ← ' + carNameOf(sp.piece.carId);
+      notify(x.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + sp.orig.destination + ': ' + t);
+      hist('שינוי שיבוץ', x.userName, 'נסיעה ל' + sp.orig.destination + ': ' + t, x.id);
+      return;
+    }
     updateRow('Requests', r.row, { carId: x.carId, fromDate: x.fromDate, toDate: x.toDate, decidedAt: nowStr(), decidedBy: me.name });
     var ct = changeTxt(before[ch.id], x);
     if (ct) { notify(x.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + x.destination + ': ' + ct); hist('שינוי שיבוץ', x.userName, 'נסיעה ל' + x.destination + ': ' + ct, x.id); }
   });
+  adds.forEach(function (a) { appendRow('Requests', a); });
   return { ok: true };
 }
 
@@ -441,7 +466,7 @@ function resubmitRequest(me, q) {
   var dest = clip(q.destination, 120);
   if (!dest) return { ok: false, message: 'יש למלא לאן הנסיעה' };
   updateRow('Requests', r.row, { fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), notes: clip(q.notes, 300),
-    status: 'pending', carId: '', adminNote: '', createdAt: nowStr(), decidedAt: '', decidedBy: '' });
+    dayDest: cleanDayDest(q.dayDest, from, to), status: 'pending', carId: '', adminNote: '', createdAt: nowStr(), decidedAt: '', decidedBy: '' });
   notifyAdmins(me.name + ' הגיש מחדש בקשה שנדחתה: ' + rangeTxt(from, to) + ' · ' + dest, me.name);
   hist('הגשה מחדש', me.name, rangeTxt(from, to) + ' · ' + dest + ' (קודם נדחתה: ' + (r.data.adminNote || '') + ')', r.data.id);
   return { ok: true };
@@ -595,7 +620,7 @@ function removeMaint(id) {
 function boardData() {
   var cutoff = Utilities.formatDate(new Date(Date.now() - 60 * 86400000), tz(), 'yyyy-MM-dd');
   var reqs = readRows('Requests').filter(function (r) { return r.status === 'approved' && r.toDate >= cutoff; })
-    .map(function (r) { return { id: r.id, userName: r.userName, carId: r.carId, fromDate: r.fromDate, toDate: r.toDate, destination: r.destination, status: r.status }; });
+    .map(function (r) { return { id: r.id, userName: r.userName, carId: r.carId, fromDate: r.fromDate, toDate: r.toDate, destination: r.destination, dayDest: r.dayDest, status: r.status }; });
   return { ok: true, requests: reqs, cars: activeCars(), maint: maintList() };
 }
 
@@ -737,9 +762,33 @@ function sheet(name) {
     sh.getRange(1, 1, 1, SHEETS[name].length).setValues([SHEETS[name]]).setFontWeight('bold');
     sh.getRange('A:Z').setNumberFormat('@');
     sh.setFrozenRows(1);
+  } else if (!HDR_OK[name]) { // עמודה חדשה שנוספה בגרסה חדשה – מוסיפים כותרת
+    var cols = SHEETS[name], lc = sh.getLastColumn();
+    if (lc < cols.length) sh.getRange(1, lc + 1, 1, cols.length - lc).setValues([cols.slice(lc)]).setFontWeight('bold').setNumberFormat('@');
   }
+  HDR_OK[name] = 1;
   return sh;
 }
+var HDR_OK = {};
+
+/* יעד לכל יום: { 'yyyy-MM-dd': 'יעד' }. נשמר כ-JSON בעמודה dayDest */
+function parseDD(v) { if (!v) return {}; if (typeof v === 'object') return v; try { var o = JSON.parse(v); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+function cleanDayDest(v, from, to) {
+  var o = parseDD(v), out = {}, n = 0;
+  dateList(from, to).forEach(function (d) { var t = clip(o[d], 120); if (t) { out[d] = t; n++; } });
+  return n ? JSON.stringify(out) : '';
+}
+/* אחרי פיצול/שינוי תאריכים: משאירים רק את הימים שבטווח ומעדכנים את שדה היעד הכללי */
+function trimDest(x) {
+  if (!x.dayDest) return x;
+  var o = parseDD(x.dayDest), keep = {}, uniq = [];
+  dateList(x.fromDate, x.toDate).forEach(function (d) { if (o[d]) { keep[d] = o[d]; if (uniq.indexOf(o[d]) < 0) uniq.push(o[d]); } });
+  if (!uniq.length) { x.dayDest = ''; return x; }
+  x.dayDest = uniq.length > 1 ? JSON.stringify(keep) : '';
+  x.destination = clip(uniq.join(' / '), 120);
+  return x;
+}
+function destOn(x, d) { var o = parseDD(x.dayDest); return o[d] || x.destination; }
 
 function cellStr(v, key) {
   if (v instanceof Date) {
