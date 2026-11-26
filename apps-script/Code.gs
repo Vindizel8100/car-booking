@@ -336,22 +336,45 @@ function adminEdit(me, q) {
     if (mt) return { ok: false, message: maintMsg(car.data.name, mt) };
   }
   var oldQ = JSON.parse(JSON.stringify(r.data));
+  /* החלפת העובד שלוקח את הרכב */
+  var owner = oldQ.userName, reqBy = oldQ.requestedBy || '';
+  if (q.userName && normName(q.userName) !== oldQ.userName) {
+    var nu = isMaster(q.userName) ? null : findRow('Users', 'name', normName(q.userName));
+    if (!nu) return { ok: false, message: 'העובד שבחרת לא נמצא ברשימה' };
+    owner = nu.data.name;
+    var dup = readRows('Requests').filter(function (x) { return x.id !== q.id && x.status === 'approved' && x.userName === owner && x.fromDate <= to && x.toDate >= from; });
+    if (carId && dup.length) return { ok: false, message: owner + ' כבר משובץ לרכב אחר ב' + rangeTxt(dup[0].fromDate, dup[0].toDate) };
+    if (!reqBy) reqBy = oldQ.userName;      // מי שביקש במקור ממשיך לראות את הנסיעה ולקבל עדכונים
+    if (reqBy === owner) reqBy = '';
+  }
   var newQ = { fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), carId: carId };
+  if (owner !== oldQ.userName) {
+    var tt = tripTxt(newQ) + (carId ? ' – ' + carNameOf(carId) : '');
+    notify(oldQ.userName, 'עדכון בנסיעה שלך', 'הנסיעה הועברה ל' + owner + ': ' + tt);
+    if (oldQ.requestedBy && oldQ.requestedBy !== owner && oldQ.requestedBy !== oldQ.userName) notify(oldQ.requestedBy, 'עדכון בנסיעה', 'הנסיעה שהזמנת הועברה מ' + oldQ.userName + ' ל' + owner + ': ' + tt);
+    notify(owner, carId ? 'שוריין לך רכב ✓' : 'נרשמה עבורך בקשת רכב', (carId ? 'המזכירה העבירה אליך נסיעה: ' : 'המזכירה רשמה עבורך בקשה: ') + tt);
+    hist('החלפת עובד', owner, 'נסיעה ל' + dest + ' ' + rangeTxt(from, to) + ': הועברה מ' + oldQ.userName + ' ל' + owner, oldQ.id);
+    oldQ.userName = owner; oldQ.requestedBy = ''; // ההתראות הרגילות למטה: רק לעובד החדש (הוא כבר קיבל הודעה), בלי כפילות
+    ME_SKIP = owner;
+  }
   var ct = changeTxt(oldQ, newQ);
   if (oldQ.status === 'approved' && !carId) notifyQ(oldQ, 'עדכון בנסיעה שלך', 'הנסיעה הוחזרה להמתנה: ' + tripTxt(newQ));
   else if (oldQ.status !== 'approved' && carId) notifyQ(oldQ, 'הבקשה אושרה ✓', tripTxt(newQ) + ' – ' + carNameOf(carId));
   else if (ct && carId) notifyQ(oldQ, 'עדכון בנסיעה שלך', 'נסיעה ל' + dest + ': ' + ct);
   else if (oldQ.status === 'rejected' && !carId) notifyQ(oldQ, 'עדכון בבקשת הרכב', 'הבקשה שנדחתה הוחזרה לטיפול: ' + tripTxt(newQ));
-  hist(oldQ.status !== 'approved' && carId ? 'אישור (בעריכה)' : 'עריכה', oldQ.userName, 'נסיעה ל' + dest + ': ' + (ct || 'עודכנו פרטים') + (oldQ.status === 'rejected' ? ' (בקשה שנדחתה)' : ''), oldQ.id);
+  if (ct || !ME_SKIP) hist(oldQ.status !== 'approved' && carId ? 'אישור (בעריכה)' : 'עריכה', oldQ.userName, 'נסיעה ל' + dest + ': ' + (ct || 'עודכנו פרטים') + (oldQ.status === 'rejected' ? ' (בקשה שנדחתה)' : ''), oldQ.id);
   var dd = '';
   if (dest === oldQ.destination && oldQ.dayDest) { var tq = trimDest({ fromDate: from, toDate: to, destination: dest, dayDest: oldQ.dayDest }); dd = tq.dayDest; dest = tq.destination; }
   updateRow('Requests', r.row, {
     dayDest: dd, fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest,
     project: clip(q.project, 40), notes: clip(q.notes, 300), adminNote: clip(q.adminNote, 200),
-    carId: carId, status: carId ? 'approved' : 'pending', decidedAt: nowStr(), decidedBy: me.name
+    carId: carId, status: carId ? 'approved' : 'pending', decidedAt: nowStr(), decidedBy: me.name,
+    userName: owner, requestedBy: reqBy
   });
+  ME_SKIP = null;
   return { ok: true };
 }
+var ME_SKIP = null;
 
 /* אישור של חלק מהימים בבקשה ממתינה: הימים שנבחרו מאושרים ברכב, השאר נשארים ממתינים */
 function approveDays(me, q) {
@@ -1077,7 +1100,7 @@ var NOTICE_QUEUE = [];
 /* התראה על בקשה: למי שהנסיעה שלו, וגם למי שהזמין אותה עבורו (אם זה מישהו אחר). לא שולחים למי שביצע את הפעולה */
 function notifyQ(x, title, text, view) {
   var who = ME && ME.name;
-  if (x.userName && x.userName !== who) notify(x.userName, title, text, view);
+  if (x.userName && x.userName !== who && x.userName !== ME_SKIP) notify(x.userName, title, text, view);
   if (x.requestedBy && x.requestedBy !== x.userName && x.requestedBy !== who) notify(x.requestedBy, title, 'עבור ' + x.userName + ': ' + text, view);
 }
 function canTouch(me, x) { return x.userName === me.name || (x.requestedBy && x.requestedBy === me.name); }

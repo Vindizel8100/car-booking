@@ -388,7 +388,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-26-4';
+var APP_VERSION = '2026-11-26-5';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -1664,6 +1664,7 @@ function openTrip(id, keep) {
   var today = iso(new Date()), days = dateList(q.fromDate, q.toDate);
   $('tripPanel').innerHTML = '<div style="display:flex;align-items:center;gap:8px"><h2 style="margin:0;flex:1">נסיעה של ' + esc(q.userName) + '</h2><span class="pill p-approved">מאושרת</span><button class="btn ghost sm" type="button" data-tp="x" aria-label="סגור">✕</button></div>' +
     '<span class="muted">' + (q.requestedBy ? 'הוזמן ע״י ' + esc(q.requestedBy) + ' · ' : '') + (q.notes ? 'הערת העובד: ' + esc(q.notes) + ' · ' : '') + 'אושר ' + esc(q.decidedAt || '') + '</span>' + ddLines(q) +
+    '<label class="f">העובד שלוקח את הרכב<select class="i" data-k="userName">' + (S.data.users || []).map(function (u) { return u.name; }).concat(S.data.users.some(function (u) { return u.name === q.userName; }) ? [] : [q.userName]).sort().map(function (n) { return '<option' + (n === q.userName ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>' +
     '<label class="f">רכב<select class="i" data-k="carId">' + cars.map(function (c) { return '<option value="' + c.id + '"' + (c.id === q.carId ? ' selected' : '') + '>' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</option>'; }).join('') + '</select></label>' +
     '<div class="row2"><label class="f">מתאריך<input class="i" type="date" data-k="fromDate" value="' + q.fromDate + '"></label><label class="f">עד תאריך<input class="i" type="date" data-k="toDate" value="' + q.toDate + '"></label></div>' +
     '<div class="row2"><label class="f">שעת יציאה<input class="i" type="time" data-k="departTime" value="' + esc(q.departTime || '') + '"></label><label class="f">מספר פרויקט<input class="i" data-k="project" maxlength="40" value="' + esc(q.project || '') + '"></label></div>' +
@@ -1694,6 +1695,15 @@ $('tripPanel').addEventListener('click', function (e) {
     var body = { id: q.id };
     this.querySelectorAll('[data-k]').forEach(function (el) { body[el.getAttribute('data-k')] = el.value; });
     if (!body.carId) { boardMsg('יש לבחור רכב'); return; }
+    var moved = body.userName && body.userName !== q.userName;
+    if (moved) {
+      askConfirm('להעביר את הנסיעה?', 'הנסיעה תועבר מ<b>' + esc(q.userName) + '</b> ל<b>' + esc(body.userName) + '</b>.<br>שניהם יקבלו התראה, והרכב ישוריין על שם ' + esc(body.userName) + ' (כולל תזכורת הקילומטראז\').', 'העבר').then(function (y) {
+        if (!y) return;
+        b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+        api('adminEdit', body).then(function (r) { b.disabled = false; b.textContent = 'שמור שינויים'; done(r, 'הנסיעה הועברה ל' + body.userName + '. שניהם קיבלו התראה'); });
+      });
+      return;
+    }
     b.disabled = true; b.innerHTML = '<span class="spin"></span>';
     api('adminEdit', body).then(function (r) { b.disabled = false; b.textContent = 'שמור שינויים'; done(r, 'הנסיעה עודכנה. ' + q.userName + ' קיבל/ה התראה'); });
   } else if (a === 'unassign') {
