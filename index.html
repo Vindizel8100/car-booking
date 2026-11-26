@@ -92,6 +92,27 @@ h2{margin:0 0 6px;font-size:19px;font-weight:800}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
 .legend span{display:flex;align-items:center;gap:6px}
 .sw{width:14px;height:14px;border-radius:4px;display:inline-block}
+#bStats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}#bStats .stat{padding:10px 14px}#bStats .stat b{font-size:24px}
+.gq{display:flex;flex-direction:column;gap:5px;background:#FFFBF0;border-radius:10px;padding:5px;min-height:44px;justify-content:center}
+.chip{border:1px solid #E8C877;background:var(--warn-bg);color:var(--warn);border-radius:9px;padding:5px 8px;font-weight:700;font-size:13px;text-align:right;cursor:pointer;min-height:40px;line-height:1.25}
+.chip small{display:block;font-weight:400;font-size:12px}
+.chip.on{border:2px solid var(--accent);background:var(--accent-l);color:var(--accent-d)}
+.gc.can{border:2px solid var(--ok);background:var(--ok-bg);color:var(--ok);font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
+.gc.can.part{border-style:dashed;background:#fff}
+.gc.dim{opacity:.4}
+.admin-board .gc.free[data-free]{cursor:pointer}
+.admin-board .gc.free[data-free]:hover{border-color:var(--accent);color:var(--accent)}
+.gc .plus{font-size:18px;line-height:1;margin-inline-end:4px}
+#pickBar{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:20;background:var(--ink);color:#fff;border-radius:14px;padding:10px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;box-shadow:0 8px 24px rgba(0,0,0,.25);width:max-content;max-width:calc(100vw - 24px)}
+#pickBar .btn.ghost{background:transparent;color:#fff;border-color:#6B7785}
+#cellMenu{position:fixed;z-index:25;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(22,32,42,.2);padding:10px;display:flex;flex-direction:column;gap:6px;width:240px}
+#cellMenu .btn{justify-content:flex-start;text-align:right}
+.drawer-bg{position:fixed;inset:0;background:rgba(22,32,42,.4);z-index:26}
+#tripPanel{position:fixed;top:0;bottom:0;left:0;width:min(440px,100vw);background:#fff;z-index:27;box-shadow:0 0 30px rgba(0,0,0,.2);padding:20px;box-sizing:border-box;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.dchip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;background:var(--busy);font-weight:700;font-size:14px}
+.dchip button{border:none;background:#fff;color:var(--bad);border-radius:7px;min-height:30px;padding:0 8px;font:inherit;font-size:13px;cursor:pointer}
+#mModal{position:fixed;inset:0;z-index:26;background:rgba(22,32,42,.4);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow-y:auto}
+#mModal>.card{max-width:560px;width:100%}
 table.t{width:100%;border-collapse:collapse}
 table.t td,table.t th{padding:10px 8px;border-top:1px solid var(--line);text-align:right;font-size:15px}
 table.t th{color:var(--muted);font-weight:500;border-top:none}
@@ -221,25 +242,33 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 
 <!-- לוח רכבים (לכולם, לעובדים לקריאה בלבד) -->
 <section id="vBoard" class="wrap wide hidden">
+  <div id="bTop" class="stack admin-only hidden" style="margin-bottom:14px"><div class="stats" id="bStats"></div></div>
   <div id="aBoard" class="card stack">
     <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
-      <h2 id="weekTitle" style="margin:0"></h2>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px"><h2 id="weekTitle" style="margin:0"></h2><button class="btn sm admin-only hidden" type="button" id="bNew">+ נסיעה חדשה</button></div>
       <div style="display:flex;gap:8px">
         <button class="btn ghost sm" type="button" id="wPrev">→ שבוע קודם</button>
         <button class="btn ghost sm" type="button" id="wNow">השבוע</button>
         <button class="btn ghost sm" type="button" id="wNext">שבוע הבא ←</button>
       </div>
     </div>
-    <p class="muted admin-only hidden" id="dragHint" style="margin:0">💡 אפשר לגרור נסיעה ליום אחר, לרכב פנוי אחר, או על נסיעה של עובד אחר באותו יום כדי להחליף ביניהם רכבים.</p>
+    <p class="muted admin-only hidden" id="dragHint" style="margin:0">לחיצה על בקשה בשורה הצהובה מסמנת בירוק איפה יש מקום · לחיצה על נסיעה פותחת פרטים ועריכה · לחיצה על משבצת פנויה: שיבוץ ידני או טיפול · גרירה: העברת יום או רכב, או החלפה בין עובדים</p>
     <div class="legend"><span><i class="sw" style="background:var(--busy)"></i>משובץ</span><span id="legWait"><i class="sw" style="background:var(--warn-bg);border:1px dashed #B07A10"></i>בקשה ממתינה</span><span><i class="sw" style="background:repeating-linear-gradient(45deg,#E7E2D6,#E7E2D6 4px,#F3EFE6 4px,#F3EFE6 8px)"></i>בטיפול</span><span><i class="sw" style="background:var(--bg);border:1px solid var(--line)"></i>פנוי</span></div>
     <div class="board"><div class="grid" id="grid"></div></div>
   </div>
+  <div class="card admin-only hidden" id="bRej" style="margin-top:14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px"></div>
+  <div id="pickBar" class="hidden"></div>
+  <div id="cellMenu" class="hidden" role="menu"></div>
+  <div id="tripBg" class="drawer-bg hidden"></div>
+  <aside id="tripPanel" class="hidden" aria-label="פרטי נסיעה"></aside>
+  <div id="mModal" class="hidden"><div class="card stack" style="gap:12px"><div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0;flex:1">נסיעה חדשה</h2><button class="btn ghost sm" type="button" id="mModalX" aria-label="סגור">✕</button></div><div id="mModalBody"></div></div></div>
 </section>
 
 <!-- מנהל -->
 <section id="vAdmin" class="wrap wide hidden">
   <div id="aMsg" class="msg hidden" style="margin-bottom:14px"></div>
   <div id="aReq" class="stack">
+    <p class="muted" style="margin:0">זו התצוגה הקודמת של הבקשות. אפשר לעבוד גם מכאן – הכול מסונכרן עם "לוח וממתינים".</p>
     <div class="stats" id="stats"></div>
     <div class="card stack" style="gap:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">הוספת נסיעה ידנית</h2><button class="btn sm" type="button" id="mToggle">+ נסיעה חדשה לעובד</button></div>
@@ -351,7 +380,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-24-6';
+var APP_VERSION = '2026-11-26-1';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -429,12 +458,12 @@ function start() {
   show($('vLogin'), false); show($('topBar'), true); show($('loading'), false);
   $('hello').textContent = 'שלום, ' + S.name;
   var tabs = S.role === 'admin'
-    ? [['req', 'בקשות'], ['board', 'לוח רכבים'], ['report', 'דוח חודשי'], ['hist', 'היסטוריה'], ['users', 'עובדים'], ['cars', 'רכבים']]
+    ? [['board', 'לוח וממתינים'], ['req', 'רשימת בקשות'], ['report', 'דוח חודשי'], ['hist', 'היסטוריה'], ['users', 'עובדים'], ['cars', 'רכבים']]
     : [['new', 'בקשה חדשה'], ['mine', 'הבקשות שלי'], ['ntf', 'התראות'], ['board', 'לוח רכבים'], ['km', 'קילומטראז\'']];
   $('tabs').innerHTML = tabs.map(function (t) { return '<button type="button" class="tab" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
   var qv = (location.search.match(/[?&]view=(\w+)/) || [])[1];
   var allowed = S.role === 'admin' ? ['req', 'board', 'report', 'hist', 'users', 'cars'] : ['new', 'mine', 'ntf', 'board', 'km'];
-  go(allowed.indexOf(qv) >= 0 ? qv : (S.role === 'admin' ? 'req' : 'new'));
+  go(allowed.indexOf(qv) >= 0 ? qv : (S.role === 'admin' ? 'board' : 'new'));
   if (S.role !== 'admin') { loadMine(); if (qv !== 'ntf') loadNtf(); }
   pushAfterLogin();
 }
@@ -443,7 +472,10 @@ $('tabs').addEventListener('click', function (e) { var v = e.target.getAttribute
 var TITLES = { new: 'בקשת רכב חדשה', mine: 'הבקשות שלי', req: 'ניהול בקשות', board: 'לוח רכבים', hist: 'היסטוריה', ntf: 'התראות', report: 'דוח חודשי', km: 'דיווח קילומטראז\'', users: 'עובדים', cars: 'רכבים' };
 function go(v, noFetch) {
   S.view = v;
-  $('pageTitle').textContent = TITLES[v];
+  $('pageTitle').textContent = v === 'board' && S.role === 'admin' ? 'לוח וממתינים' : TITLES[v];
+  if (S.role === 'admin') { var am = $('aMsg'); if (v === 'board') $('vBoard').insertBefore(am, $('vBoard').firstChild); else $('vAdmin').insertBefore(am, $('vAdmin').firstChild); }
+  if (v !== 'board') { S.pick = null; closeBoardUi(); }
+  document.querySelectorAll('#vBoard .admin-only').forEach(function (el) { show(el, S.role === 'admin'); });
   Array.prototype.forEach.call($('tabs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-v') === v); });
   show($('vNew'), v === 'new'); show($('vMine'), v === 'mine'); show($('vKm'), v === 'km'); show($('vNtf'), v === 'ntf');
   if (v === 'ntf') { S.ntfMark = ntfSeen(); if (S.ntf) renderNtf(); else $('ntfList').innerHTML = '<div class="center"><span class="spin"></span></div>'; if (!noFetch) loadNtf(); }
@@ -929,7 +961,7 @@ $('mToggle').addEventListener('click', function () {
 $('mCancel').addEventListener('click', function () { show($('mForm'), false); });
 $('mFrom').addEventListener('change', function () { if (!$('mTo').value || $('mTo').value < this.value) $('mTo').value = this.value; $('mTo').min = this.value; fillManualCars(); });
 $('mTo').addEventListener('change', fillManualCars);
-$('mUser').addEventListener('change', function () { $('mCar').value = ''; fillManualCars(); });
+$('mUser').addEventListener('change', function () { $('mCar').value = (!$('mModal').classList.contains('hidden') && S.mCarWant) || ''; fillManualCars(); });
 $('mForm').addEventListener('submit', function (e) {
   e.preventDefault();
   var body = { userName: $('mUser').value, fromDate: $('mFrom').value, toDate: $('mTo').value, departTime: $('mTime').value,
@@ -1257,7 +1289,7 @@ document.addEventListener('pointerup', function (e) {
   if (!drag || e.pointerId !== drag.pid) return;
   var d = drag; drag = null;
   document.body.style.userSelect = '';
-  if (!d.ghost) return;
+  if (!d.ghost) { if (!S.pick) openTrip(d.rid); return; }
   d.ghost.remove(); d.cell.style.opacity = ''; if (d.over) d.over.style.boxShadow = '';
   if (!d.over || d.over === d.cell) return;
   dropTrip(d.rid, d.day, d.car, d.over);
@@ -1363,6 +1395,11 @@ function renderAdmin() {
       '<div class="c"><b style="font-weight:500">' + range(q.fromDate, q.toDate) + ' · ' + dayName(q.fromDate) + '</b><span class="muted">בוטל ' + esc(q.decidedAt) + '</span></div>' +
       '<div class="c"><span class="pill p-cancelled" style="align-self:flex-start">' + esc(c ? c.name : '') + ' התפנה</span></div></div>';
   }).join('');
+  $('bStats').innerHTML = $('stats').innerHTML;
+  var tb = document.querySelector('#tabs [data-v=board]'); if (tb) tb.innerHTML = 'לוח וממתינים' + (pend.length ? '<span class="badge">' + pend.length + '</span>' : '');
+  var nRej = d.requests.filter(function (r) { return r.status === 'rejected' && r.toDate >= today; }).length;
+  $('bRej').innerHTML = '<b style="flex:1">בקשות שנדחו' + (nRej ? ' (' + nRej + ')' : '') + '</b><span class="muted">אפשר לאשר אותן בכל זאת או להחזיר לטיפול</span><button class="btn ghost sm" type="button" id="bRejGo">לרשימת הבקשות שנדחו</button>';
+  if (S.tripId && !$('tripPanel').classList.contains('hidden')) openTrip(S.tripId, true);
   renderAssign();
   renderRejected(); renderBoard(); renderUsers(); renderCars(); renderMaint(); renderKmAdmin(); renderFaults();
   if (!$('mForm').classList.contains('hidden')) fillManual();
@@ -1406,29 +1443,234 @@ function onRowAction(e) {
 $('pendList').addEventListener('click', onRowAction);
 $('apprList').addEventListener('click', onRowAction);
 
-function renderBoard() {
+function weekDays() {
   var base = new Date(); base.setHours(0, 0, 0, 0); base.setDate(base.getDate() - base.getDay() + S.week * 7);
   var days = []; for (var i = 0; i < 5; i++) { var x = new Date(base); x.setDate(base.getDate() + i); days.push(iso(x)); }
+  return days;
+}
+/* רכב פנוי ביום מסוים (בלי נסיעה מאושרת ובלי טיפול), לא כולל בקשה exceptId */
+function carFreeOn(carId, d, exceptId) {
+  if (maintOf(carId, d, d)) return false;
+  return !S.data.requests.some(function (r) { return r.id !== exceptId && r.status === 'approved' && r.carId === carId && r.fromDate <= d && r.toDate >= d; });
+}
+function renderBoard() {
+  var days = weekDays();
   $('weekTitle').textContent = 'שבוע ' + ltr(dm(days[0]) + '–' + dm(days[4]));
   var reqs = (src() || { requests: [] }).requests, admin = S.role === 'admin';
-  var h = '<div></div>' + days.map(function (d, i) { return '<div class="gh">' + DAYS[i] + ' ' + dm(d) + '</div>'; }).join('');
+  var pick = admin && S.pick ? reqById(S.pick) : null;
+  if (pick && pick.status !== 'pending') { S.pick = null; pick = null; }
+  var fullIds = pick ? freeCars(pick).map(function (c) { return c.id; }) : [];
+  var h = '<div></div>' + days.map(function (d, i) { return '<div class="gh"' + (pick && d >= pick.fromDate && d <= pick.toDate ? ' style="background:var(--accent-l);color:var(--accent-d);border-radius:8px"' : '') + '>' + DAYS[i] + ' ' + dm(d) + '</div>'; }).join('');
+  if (admin) {
+    h += '<div class="gname" style="color:var(--warn)">ממתינים</div>';
+    days.forEach(function (d) {
+      var w = reqs.filter(function (r) { return r.status === 'pending' && r.fromDate <= d && r.toDate >= d; });
+      h += '<div class="gq">' + (w.length ? w.map(function (r) {
+        var n = dateList(r.fromDate, r.toDate).length;
+        return '<button type="button" class="chip' + (pick && pick.id === r.id ? ' on' : '') + '" data-pick="' + r.id + '">' + esc(r.userName) + '<small>' + esc(destOn(r, d)) + (n > 1 ? ' · ' + n + ' ימים' : '') + '</small></button>';
+      }).join('') : '<span class="muted" style="font-size:12px;text-align:center">—</span>') + '</div>';
+    });
+  }
   carsActive().forEach(function (c) {
     h += '<div class="gname">' + esc(c.name) + '</div>';
     days.forEach(function (d) {
+      var inPick = pick && d >= pick.fromDate && d <= pick.toDate, dim = pick && !inPick ? ' dim' : '';
       var a = reqs.filter(function (r) { var e = eff(r); return r.status === 'approved' && e.carId === c.id && e.fromDate <= d && e.toDate >= d; })[0];
       var mt = maintOf(c.id, d, d);
-      if (mt && a && admin) { h += '<div class="gc" style="background:var(--bad-bg);color:var(--bad);font-weight:700"><span>בטיפול!<small class="gcar" style="color:var(--bad)">אבל משובץ ל' + esc(a.userName) + '</small></span></div>'; return; }
-      if (mt) { h += '<div class="gc maint" data-maint="1" data-day="' + d + '" data-car="' + c.id + '"><span>בטיפול' + (mt.note ? '<small class="gcar" style="color:#5B4A2A">' + esc(mt.note) + '</small>' : '') + '</span></div>'; return; }
-      h += a ? '<div class="gc busy' + (a.userName === S.name && !admin ? '" style="outline:2px solid var(--accent)' : '') + '" data-rid="' + a.id + '" data-day="' + d + '" data-car="' + c.id + '" title="' + (admin ? 'גרור כדי להעביר יום או רכב' : esc(destOn(a, d))) + '"><span>' + esc(a.userName) + '<small class="gcar">' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</small>' + (a.destination ? '<small class="gcar">' + esc(destOn(a, d)) + '</small>' : '') + '</span></div>' : '<div class="gc free" data-day="' + d + '" data-car="' + c.id + '">פנוי</div>';
+      if (mt && a && admin) { h += '<div class="gc' + dim + '" style="background:var(--bad-bg);color:var(--bad);font-weight:700"><span>בטיפול!<small class="gcar" style="color:var(--bad)">אבל משובץ ל' + esc(a.userName) + '</small></span></div>'; return; }
+      if (mt) { h += '<div class="gc maint' + dim + '" data-maint="1" data-day="' + d + '" data-car="' + c.id + '"><span>בטיפול' + (mt.note ? '<small class="gcar" style="color:#5B4A2A">' + esc(mt.note) + '</small>' : '') + '</span></div>'; return; }
+      if (a) { h += '<div class="gc busy' + dim + (a.userName === S.name && !admin ? '" style="outline:2px solid var(--accent)' : '') + '" data-rid="' + a.id + '" data-day="' + d + '" data-car="' + c.id + '" title="' + (admin ? 'לחיצה: פרטים ועריכה · גרירה: העברה' : esc(destOn(a, d))) + '"><span>' + esc(a.userName) + '<small class="gcar">' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</small>' + (a.destination ? '<small class="gcar">' + esc(destOn(a, d)) + '</small>' : '') + '</span></div>'; return; }
+      if (inPick) {
+        var full = fullIds.indexOf(c.id) >= 0;
+        h += '<button type="button" class="gc can' + (full ? '' : ' part') + '" data-can="' + (full ? 'full' : 'part') + '" data-day="' + d + '" data-car="' + c.id + '">' + (full ? 'שבץ כאן' : 'פנוי חלקית') + '</button>';
+        return;
+      }
+      h += '<div class="gc free' + dim + '"' + (admin ? ' data-free="1"' : '') + ' data-day="' + d + '" data-car="' + c.id + '">' + (admin ? '<span class="plus" aria-hidden="true">+</span>' : '') + 'פנוי</div>';
     });
   });
-  if (!admin) { $('grid').innerHTML = h; return; }
-  var waiting = days.map(function (d) { return reqs.filter(function (r) { return r.status === 'pending' && r.fromDate <= d && r.toDate >= d; }); });
-  h += '<div class="gname" style="color:var(--warn)">ממתינים</div>';
-  waiting.forEach(function (w) { h += w.length ? '<div class="gc wait">' + w.map(function (r) { return esc(r.userName); }).join('<br>') + '</div>' : '<div class="gc free">—</div>'; });
   $('grid').innerHTML = h;
   $('grid').classList.toggle('admin-board', admin);
+  if (admin) renderPickBar(pick, fullIds);
 }
+function renderPickBar(pick, fullIds) {
+  if (!pick || S.view !== 'board') { show($('pickBar'), false); return; }
+  var free = carsActive().filter(function (c) { return fullIds.indexOf(c.id) >= 0; }), sg = suggestCar(pick, free);
+  var days = weekDays(), visible = pick.toDate >= days[0] && pick.fromDate <= days[4];
+  $('pickBar').innerHTML = '<span><b>' + esc(pick.userName) + '</b> · ' + esc(pick.destination) + ' · ' + range(pick.fromDate, pick.toDate) + (pick.project ? ' · פרויקט ' + esc(pick.project) : '') + '</span>' +
+    (visible ? '<span style="color:#C9D3DE">' + (free.length ? 'לחצי על משבצת ירוקה כדי לשבץ' : 'אין רכב פנוי בכל הימים – אפשר לשבץ חלקית במשבצות המקווקוות') + '</span>' : '<button class="btn ghost sm" type="button" data-pb="week">עבור לשבוע של הבקשה</button>') +
+    (sg && carById(sg.id) ? '<button class="btn ok sm" type="button" data-pb="sg" data-car="' + sg.id + '">אשר עם ' + esc(carById(sg.id).name) + ' (מומלץ)</button>' : '') +
+    '<button class="btn sm" type="button" data-pb="rej" style="background:#fff;color:var(--bad)">דחה</button>' +
+    '<button class="btn ghost sm" type="button" data-pb="x">ביטול</button>';
+  show($('pickBar'), true);
+}
+function closeBoardUi() {
+  show($('pickBar'), false); show($('cellMenu'), false);
+}
+function boardMsg(t, ok) { msg($('aMsg'), t, ok); window.scrollTo(0, 0); }
+function approvePick(q, carId) {
+  var c = carById(carId);
+  askConfirm('לאשר ולשבץ?', '<b>' + esc(q.userName) + '</b> · ' + esc(q.destination) + ' · ' + range(q.fromDate, q.toDate) + '<br>ברכב <b>' + esc(c ? c.name : '') + '</b>' + (c && c.plate ? ' (' + ltr(esc(c.plate)) + ')' : ''), 'אשר ושבץ').then(function (yes) {
+    if (!yes) return;
+    q.status = 'approved'; q.carId = carId; S.pick = null; renderAdmin();
+    boardMsg('הבקשה אושרה. ' + q.userName + ' קיבל/ה התראה', true);
+    api('decide', { id: q.id, decision: 'approve', carId: carId, note: '' }).then(function (r) { if (!r.ok) boardMsg(r.message); if (r.data) applyAdmin(r); else loadAdmin(); });
+  });
+}
+function approvePart(q, carId) {
+  var c = carById(carId), days = dateList(q.fromDate, q.toDate).filter(function (d) { return carFreeOn(carId, d, q.id); });
+  if (!days.length) return;
+  var txt = days.map(function (d) { return dayName(d) + ' ' + ltr(dm(d)); }).join(', ');
+  askConfirm('לשבץ חלקית?', esc(c ? c.name : '') + ' פנוי רק ב: <b>' + txt + '</b>.<br><b>' + esc(q.userName) + '</b> ישובץ ברכב הזה בימים האלה, ושאר הימים יישארו בשורה הצהובה כדי לשבץ אותם ברכב אחר.', 'שבץ בימים האלה').then(function (yes) {
+    if (!yes) return;
+    boardMsg('שומר…', true); S.pick = null; renderBoard();
+    api('approveDays', { id: q.id, carId: carId, days: days }).then(function (r) {
+      if (!r.ok) boardMsg(r.message); else boardMsg('שובץ ב-' + txt + '. שאר הימים עדיין ממתינים', true);
+      if (r.data) applyAdmin(r); else loadAdmin();
+    });
+  });
+}
+function rejectPick(q, again) {
+  askConfirm('לדחות את הבקשה?', '<b>' + esc(q.userName) + '</b> · ' + esc(q.destination) + ' · ' + range(q.fromDate, q.toDate) +
+    '<label class="f" style="margin-top:10px">סיבת הדחייה (חובה, העובד יראה אותה)<textarea class="i" id="rejNote" rows="2" maxlength="200"' + (again ? ' style="border-color:var(--bad);outline:2px solid var(--bad)"' : '') + '></textarea></label>', 'דחה').then(function (yes) {
+    if (!yes) return;
+    var note = ($('rejNote') || {}).value || '';
+    if (!note.trim()) { rejectPick(q, true); return; }
+    q.status = 'rejected'; q.adminNote = note; S.pick = null; renderAdmin();
+    boardMsg('הבקשה נדחתה. ' + q.userName + ' קיבל/ה התראה עם הסיבה', true);
+    api('decide', { id: q.id, decision: 'reject', note: note }).then(function (r) { if (!r.ok) boardMsg(r.message); if (r.data) applyAdmin(r); else loadAdmin(); });
+  });
+  setTimeout(function () { var t = $('rejNote'); if (t) t.focus(); }, 50);
+}
+$('pickBar').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-pb]'); if (!b) return;
+  var q = S.pick ? reqById(S.pick) : null; if (!q) return;
+  var a = b.getAttribute('data-pb');
+  if (a === 'x') { S.pick = null; renderBoard(); }
+  else if (a === 'rej') rejectPick(q);
+  else if (a === 'sg') approvePick(q, b.getAttribute('data-car'));
+  else if (a === 'week') { var now = new Date(); now.setHours(0, 0, 0, 0); now.setDate(now.getDate() - now.getDay()); S.week = Math.floor(dayDiff(iso(now), q.fromDate) / 7); renderBoard(); }
+});
+$('grid').addEventListener('click', function (e) {
+  if (S.role !== 'admin') return;
+  var t = e.target.closest('[data-pick],[data-can],[data-free]'); if (!t) return;
+  if (t.hasAttribute('data-pick')) { var id = t.getAttribute('data-pick'); S.pick = S.pick === id ? null : id; show($('cellMenu'), false); renderBoard(); return; }
+  if (t.hasAttribute('data-can')) { var q = reqById(S.pick); if (!q) return; if (t.getAttribute('data-can') === 'full') approvePick(q, t.getAttribute('data-car')); else approvePart(q, t.getAttribute('data-car')); return; }
+  if (t.hasAttribute('data-free') && !S.pick) openCellMenu(t);
+});
+/* תפריט למשבצת פנויה */
+function openCellMenu(cell) {
+  var car = cell.getAttribute('data-car'), d = cell.getAttribute('data-day'), c = carById(car), r = cell.getBoundingClientRect();
+  $('cellMenu').innerHTML = '<b style="font-size:15px">' + esc(c ? c.name : '') + ' · ' + dayName(d) + ' ' + ltr(dm(d)) + '</b>' +
+    '<button class="btn ghost sm" type="button" data-cm="add" role="menuitem">שבץ עובד ביום הזה</button>' +
+    '<button class="btn ghost sm" type="button" data-cm="maint" role="menuitem">סמן את הרכב בטיפול</button>';
+  $('cellMenu').setAttribute('data-car', car); $('cellMenu').setAttribute('data-day', d);
+  show($('cellMenu'), true);
+  var m = $('cellMenu'), top = r.bottom + 6, left = r.left + r.width / 2 - 120;
+  if (top + m.offsetHeight > innerHeight - 8) top = r.top - m.offsetHeight - 6;
+  m.style.top = Math.max(8, top) + 'px'; m.style.left = Math.min(innerWidth - 248, Math.max(8, left)) + 'px';
+  setTimeout(function () { m.querySelector('[data-cm]').focus(); }, 0);
+}
+$('cellMenu').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-cm]'); if (!b) return;
+  var car = this.getAttribute('data-car'), d = this.getAttribute('data-day'); show(this, false);
+  if (b.getAttribute('data-cm') === 'add') openManual(car, d);
+  else markMaint(car, d);
+});
+document.addEventListener('pointerdown', function (e) { if (!$('cellMenu').classList.contains('hidden') && !e.target.closest('#cellMenu') && !e.target.closest('[data-free]')) show($('cellMenu'), false); });
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  if (!$('cellMenu').classList.contains('hidden')) show($('cellMenu'), false);
+  else if (!$('tripPanel').classList.contains('hidden')) closeTrip();
+  else if (!$('mModal').classList.contains('hidden') && $('confirmBox').classList.contains('hidden')) closeManual();
+  else if (S.pick && $('confirmBox').classList.contains('hidden')) { S.pick = null; renderBoard(); }
+});
+function markMaint(car, d) {
+  var c = carById(car);
+  askConfirm('לסמן בטיפול?', '<b>' + esc(c ? c.name : '') + '</b> ב' + dayName(d) + ' ' + ltr(dm(d)) + '<label class="f" style="margin-top:10px">הערה (לא חובה)<input class="i" id="mtNote" maxlength="120" placeholder="למשל: טיפול 30,000"></label>', 'סמן בטיפול').then(function (yes) {
+    if (!yes) return;
+    boardMsg('שומר…', true);
+    api('addMaint', { carId: car, fromDate: d, toDate: d, note: ($('mtNote') || {}).value || '', force: false }).then(function (r) {
+      if (!r.ok) boardMsg(r.message); else boardMsg('הרכב סומן בטיפול', true);
+      if (r.data) applyAdmin(r); else loadAdmin();
+    });
+  });
+}
+/* חלון נסיעה חדשה – משתמש בטופס ההוספה הידנית הקיים */
+var mHome = null;
+function openManual(car, d) {
+  var f = $('mForm'); if (!mHome) mHome = { parent: f.parentNode, next: f.nextSibling };
+  $('mModalBody').appendChild(f); $('mModalBody').insertBefore($('aMsg'), f);
+  show(f, true); show($('mModal'), true);
+  var t = new Date(); t.setDate(t.getDate() + 1);
+  $('mFrom').value = d || $('mFrom').value || iso(t); $('mTo').value = d || $('mTo').value || $('mFrom').value; $('mTo').min = $('mFrom').value;
+  fillManual();
+  S.mCarWant = car || '';
+  if (car && $('mCar').querySelector('option[value="' + car + '"]')) $('mCar').value = car;
+  setTimeout(function () { $('mUser').focus(); }, 50);
+}
+function closeManual() {
+  if (!mHome) return;
+  var f = $('mForm'); show($('mModal'), false); show(f, false);
+  mHome.parent.insertBefore(f, mHome.next);
+  if (S.view === 'board') $('vBoard').insertBefore($('aMsg'), $('vBoard').firstChild); else $('vAdmin').insertBefore($('aMsg'), $('vAdmin').firstChild);
+}
+new MutationObserver(function () { if (!$('mModal').classList.contains('hidden') && $('mForm').classList.contains('hidden')) closeManual(); }).observe($('mForm'), { attributes: true, attributeFilter: ['class'] });
+$('mModalX').addEventListener('click', closeManual);
+$('mModal').addEventListener('click', function (e) { if (e.target === this) closeManual(); });
+$('bNew').addEventListener('click', function () { openManual('', ''); });
+document.addEventListener('click', function (e) { if (e.target && e.target.id === 'bRejGo') { go('req'); setTimeout(function () { var rc = $('rejCard'); if (rc && !rc.classList.contains('hidden')) rc.scrollIntoView({ behavior: 'smooth' }); }, 50); } });
+/* חלון צד: פרטי נסיעה מאושרת */
+function openTrip(id, keep) {
+  var q = reqById(id); if (!q || q.status !== 'approved') { closeTrip(); return; }
+  if (keep && $('tripPanel').contains(document.activeElement) && document.activeElement.tagName !== 'BUTTON') return;
+  S.tripId = id;
+  var cars = freeCars(q), cur = carById(q.carId);
+  if (cur && !cars.some(function (c) { return c.id === cur.id; })) cars.unshift(cur);
+  var today = iso(new Date()), days = dateList(q.fromDate, q.toDate);
+  $('tripPanel').innerHTML = '<div style="display:flex;align-items:center;gap:8px"><h2 style="margin:0;flex:1">נסיעה של ' + esc(q.userName) + '</h2><span class="pill p-approved">מאושרת</span><button class="btn ghost sm" type="button" data-tp="x" aria-label="סגור">✕</button></div>' +
+    '<span class="muted">' + (q.notes ? 'הערת העובד: ' + esc(q.notes) + ' · ' : '') + 'אושר ' + esc(q.decidedAt || '') + '</span>' + ddLines(q) +
+    '<label class="f">רכב<select class="i" data-k="carId">' + cars.map(function (c) { return '<option value="' + c.id + '"' + (c.id === q.carId ? ' selected' : '') + '>' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</option>'; }).join('') + '</select></label>' +
+    '<div class="row2"><label class="f">מתאריך<input class="i" type="date" data-k="fromDate" value="' + q.fromDate + '"></label><label class="f">עד תאריך<input class="i" type="date" data-k="toDate" value="' + q.toDate + '"></label></div>' +
+    '<div class="row2"><label class="f">שעת יציאה<input class="i" type="time" data-k="departTime" value="' + esc(q.departTime || '') + '"></label><label class="f">מספר פרויקט<input class="i" data-k="project" maxlength="40" value="' + esc(q.project || '') + '"></label></div>' +
+    '<label class="f">לאן<input class="i" data-k="destination" maxlength="120" value="' + esc(q.destination) + '"></label>' +
+    '<label class="f">הערה לעובד<input class="i" data-k="adminNote" maxlength="200" value="' + esc(q.adminNote || '') + '"></label>' +
+    '<input type="hidden" data-k="notes" value="' + esc(q.notes || '') + '">' +
+    (days.length > 1 ? '<div class="stack" style="gap:6px"><b>ביטול יום מסוים</b><div style="display:flex;flex-wrap:wrap;gap:6px">' + days.map(function (d) { return '<span class="dchip">' + dayName(d) + ' ' + ltr(dm(d)) + '<button type="button" data-tp="day" data-d="' + d + '">בטל</button></span>'; }).join('') + '</div></div>' : '') +
+    '<div class="stack" style="gap:8px;margin-top:auto;padding-top:8px"><button class="btn big" type="button" data-tp="save">שמור שינויים</button>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" type="button" data-tp="unassign" style="flex:1">החזר להמתנה</button><button class="btn bad" type="button" data-tp="cancel" style="flex:1">בטל את הנסיעה</button></div></div>';
+  show($('tripBg'), true); show($('tripPanel'), true);
+  if (!keep) setTimeout(function () { $('tripPanel').querySelector('[data-tp=x]').focus(); }, 30);
+}
+function closeTrip() { S.tripId = null; show($('tripPanel'), false); show($('tripBg'), false); }
+$('tripBg').addEventListener('click', closeTrip);
+$('tripPanel').addEventListener('change', function (e) {
+  if (e.target.getAttribute('data-k') !== 'fromDate' && e.target.getAttribute('data-k') !== 'toDate') return;
+  var p = this, f = p.querySelector('[data-k=fromDate]'), t = p.querySelector('[data-k=toDate]');
+  if (!t.value || t.value < f.value) t.value = f.value;
+  var sel = p.querySelector('[data-k=carId]'), keep = sel.value, free = freeCars({ id: S.tripId, fromDate: f.value, toDate: t.value });
+  sel.innerHTML = free.map(function (c) { return '<option value="' + c.id + '"' + (c.id === keep ? ' selected' : '') + '>' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</option>'; }).join('') || '<option value="">אין רכב פנוי בתאריכים האלה</option>';
+});
+$('tripPanel').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-tp]'); if (!b) return;
+  var a = b.getAttribute('data-tp'), q = reqById(S.tripId); if (!q) return;
+  if (a === 'x') return closeTrip();
+  var done = function (r, okText) { if (!r.ok) { boardMsg(r.message); } else { boardMsg(okText, true); closeTrip(); } if (r.data) applyAdmin(r); else loadAdmin(); };
+  if (a === 'save') {
+    var body = { id: q.id };
+    this.querySelectorAll('[data-k]').forEach(function (el) { body[el.getAttribute('data-k')] = el.value; });
+    if (!body.carId) { boardMsg('יש לבחור רכב'); return; }
+    b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+    api('adminEdit', body).then(function (r) { b.disabled = false; b.textContent = 'שמור שינויים'; done(r, 'הנסיעה עודכנה. ' + q.userName + ' קיבל/ה התראה'); });
+  } else if (a === 'unassign') {
+    askConfirm('להחזיר להמתנה?', 'הרכב ישתחרר והבקשה של <b>' + esc(q.userName) + '</b> תחזור לשורה הצהובה.', 'החזר להמתנה').then(function (y) { if (y) api('decide', { id: q.id, decision: 'unassign' }).then(function (r) { done(r, 'הנסיעה הוחזרה להמתנה'); }); });
+  } else if (a === 'cancel') {
+    askConfirm('לבטל את הנסיעה?', 'הנסיעה של <b>' + esc(q.userName) + '</b> ל' + esc(q.destination) + ' ' + range(q.fromDate, q.toDate) + ' תבוטל, והעובד יקבל התראה.', 'בטל נסיעה').then(function (y) { if (y) api('cancelDays', { id: q.id, days: dateList(q.fromDate, q.toDate) }).then(function (r) { done(r, 'הנסיעה בוטלה'); }); });
+  } else if (a === 'day') {
+    var d = b.getAttribute('data-d');
+    askConfirm('לבטל יום אחד?', 'רק ' + dayName(d) + ' ' + ltr(dm(d)) + ' יבוטל מהנסיעה של <b>' + esc(q.userName) + '</b>. שאר הימים נשארים.', 'בטל את היום').then(function (y) { if (y) api('cancelDays', { id: q.id, days: [d] }).then(function (r) { done(r, 'היום בוטל'); }); });
+  }
+});
+
 $('wPrev').addEventListener('click', function () { S.week--; renderBoard(); });
 $('wNext').addEventListener('click', function () { S.week++; renderBoard(); });
 $('wNow').addEventListener('click', function () { S.week = 0; renderBoard(); });

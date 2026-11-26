@@ -116,6 +116,7 @@ function handle(req) {
     removeCar: function () { return removeCar(req.id); },
     assignCars: function () { return assignCars(me, req.changes); },
     adminCreate: function () { return adminCreate(me, req); },
+    approveDays: function () { return approveDays(me, req); },
     adminEdit: function () { return adminEdit(me, req); },
     closeFault: function () { return closeFault(me, req.id); },
     addMaint: function () { return addMaint(me, req); },
@@ -341,6 +342,42 @@ function adminEdit(me, q) {
     project: clip(q.project, 40), notes: clip(q.notes, 300), adminNote: clip(q.adminNote, 200),
     carId: carId, status: carId ? 'approved' : 'pending', decidedAt: nowStr(), decidedBy: me.name
   });
+  return { ok: true };
+}
+
+/* אישור של חלק מהימים בבקשה ממתינה: הימים שנבחרו מאושרים ברכב, השאר נשארים ממתינים */
+function approveDays(me, q) {
+  var r = findRow('Requests', 'id', q.id);
+  if (!r) return { ok: false, message: 'הבקשה לא נמצאה' };
+  var x = r.data;
+  if (x.status !== 'pending' && x.status !== 'rejected') return { ok: false, message: 'הבקשה כבר טופלה. רענן את הדף' };
+  var car = findRow('Cars', 'id', q.carId);
+  if (!car || car.data.active !== 'yes') return { ok: false, message: 'יש לבחור רכב' };
+  var all = dateList(x.fromDate, x.toDate), dset = {}, nd = 0;
+  (q.days || []).forEach(function (d) { d = cleanDate(d); if (d && all.indexOf(d) >= 0 && !dset[d]) { dset[d] = 1; nd++; } });
+  if (!nd) return { ok: false, message: 'יש לבחור לפחות יום אחד' };
+  if (nd === all.length) return decide(me, { id: q.id, decision: 'approve', carId: q.carId, note: q.note });
+  var sel = all.filter(function (d) { return dset[d]; }), rr = runs(sel), appr = readRows('Requests');
+  for (var i = 0; i < rr.length; i++) {
+    var clash = appr.filter(function (y) { return y.id !== x.id && y.status === 'approved' && y.carId === q.carId && y.fromDate <= rr[i][1] && y.toDate >= rr[i][0]; });
+    if (clash.length) return { ok: false, message: car.data.name + ' כבר משובץ ל' + clash[0].userName + ' בחלק מהימים' };
+    var mt = maintClash(q.carId, rr[i][0], rr[i][1]);
+    if (mt) return { ok: false, message: maintMsg(car.data.name, mt) };
+  }
+  var segs = [];
+  all.forEach(function (d) { var s1 = !!dset[d], l = segs[segs.length - 1]; if (l && l.sel === s1 && dateList(l.to, d).length === 2) l.to = d; else segs.push({ from: d, to: d, sel: s1 }); });
+  var stamp = nowStr();
+  segs.forEach(function (sg, idx) {
+    var o = JSON.parse(JSON.stringify(x));
+    o.fromDate = sg.from; o.toDate = sg.to; trimDest(o);
+    o.status = sg.sel ? 'approved' : 'pending'; o.carId = sg.sel ? q.carId : '';
+    if (sg.sel) { o.decidedAt = stamp; o.decidedBy = me.name; o.adminNote = clip(q.note, 200); }
+    if (idx === 0) updateRow('Requests', r.row, { fromDate: o.fromDate, toDate: o.toDate, destination: o.destination, dayDest: o.dayDest, status: o.status, carId: o.carId, decidedAt: o.decidedAt, decidedBy: o.decidedBy, adminNote: o.adminNote });
+    else { o.id = newId(); appendRow('Requests', o); }
+  });
+  var dtxt = rr.map(function (a) { return rangeTxt(a[0], a[1]); }).join(', ');
+  notify(x.userName, 'הבקשה אושרה חלקית ✓', 'נסיעה ל' + x.destination + ': ' + dtxt + ' – ' + car.data.name + '. שאר הימים עדיין ממתינים לשיבוץ');
+  hist('אישור חלקי', x.userName, 'נסיעה ל' + x.destination + ': ' + dtxt + ' – ' + car.data.name, x.id);
   return { ok: true };
 }
 
