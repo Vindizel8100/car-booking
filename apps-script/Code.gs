@@ -23,7 +23,7 @@ var SHEETS = {
   Mileage: ['id', 'at', 'userName', 'carId', 'km', 'note'],
   Faults: ['id', 'at', 'userName', 'carId', 'text', 'status', 'closedAt', 'closedBy'],
   Requests: ['id', 'userName', 'fromDate', 'toDate', 'departTime', 'destination', 'project', 'notes',
-             'status', 'carId', 'adminNote', 'createdAt', 'decidedAt', 'decidedBy', 'dayDest']
+             'status', 'carId', 'adminNote', 'createdAt', 'decidedAt', 'decidedBy', 'dayDest', 'requestedBy']
 };
 
 /* ---------- התקנה ---------- */
@@ -81,7 +81,7 @@ function handle(req) {
   var res;
 
   if (a === 'me') return { ok: true, name: me.name, role: me.role };
-  if (a === 'myRequests') return { ok: true, requests: myRequests(me.name), cars: activeCars() };
+  if (a === 'myRequests') return { ok: true, requests: myRequests(me.name), cars: activeCars(), users: readRows('Users').map(function (u) { return u.name; }).filter(function (n) { return n !== me.name && !isMaster(n); }).sort() };
   if (a === 'board') return boardData();
   if (a === 'pushSubscribe') return pushSubscribe(me, req.sub);
   if (a === 'pushUnsubscribe') return pushUnsubscribe(String(req.endpoint || ''));
@@ -182,7 +182,7 @@ function hashPass(pass) {
 /* ---------- בקשות ---------- */
 
 function myRequests(name) {
-  return readRows('Requests').filter(function (r) { return r.userName === name; })
+  return readRows('Requests').filter(function (r) { return r.userName === name || r.requestedBy === name; })
     .sort(function (a, b) { return b.createdAt < a.createdAt ? -1 : 1; }).slice(0, 50);
 }
 
@@ -192,36 +192,44 @@ function createRequest(me, q) {
   if (to < from) return { ok: false, message: 'תאריך הסיום לפני תאריך ההתחלה' };
   var dest = clip(q.destination, 120);
   if (!dest) return { ok: false, message: 'יש למלא לאן הנסיעה' };
+  var owner = me.name, by = '';
+  if (q.forUser && normName(q.forUser) !== me.name) { // בקשה עבור עובד אחר
+    var fu = isMaster(q.forUser) ? null : findRow('Users', 'name', normName(q.forUser));
+    if (!fu) return { ok: false, message: 'העובד שבחרת לא נמצא ברשימה' };
+    owner = fu.data.name; by = me.name;
+  }
   var nid = newId();
   appendRow('Requests', {
     id: nid,
-    userName: me.name, fromDate: from, toDate: to,
+    userName: owner, fromDate: from, toDate: to,
     departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), notes: clip(q.notes, 300),
-    status: 'pending', carId: '', adminNote: '', createdAt: nowStr(), decidedAt: '', decidedBy: '', dayDest: cleanDayDest(q.dayDest, from, to)
+    status: 'pending', carId: '', adminNote: '', createdAt: nowStr(), decidedAt: '', decidedBy: '', dayDest: cleanDayDest(q.dayDest, from, to), requestedBy: by
   });
-  notifyAdmins('בקשה חדשה מ' + me.name + ': ' + rangeTxt(from, to) + ' · ' + dest + (q.project ? ' · פרויקט ' + clip(q.project, 40) : ''), me.name);
-  hist('בקשה חדשה', me.name, rangeTxt(from, to) + ' · ' + dest + (q.project ? ' · פרויקט ' + clip(q.project, 40) : ''), nid);
+  var tt = rangeTxt(from, to) + ' · ' + dest + (q.project ? ' · פרויקט ' + clip(q.project, 40) : '');
+  notifyAdmins(by ? 'בקשה חדשה עבור ' + owner + ' (ביקש: ' + by + '): ' + tt : 'בקשה חדשה מ' + me.name + ': ' + tt, me.name);
+  if (by) notify(owner, 'הוזמן עבורך רכב', by + ' ביקש עבורך רכב: ' + tt + '. תקבל עדכון כשהמזכירה תאשר');
+  hist('בקשה חדשה', owner, tt + (by ? ' · הוזמן ע״י ' + by : ''), nid);
   return { ok: true };
 }
 
 function cancelRequest(me, id) {
   var r = findRow('Requests', 'id', id);
-  if (!r || (r.data.userName !== me.name && me.role !== 'admin')) return { ok: false, message: 'הבקשה לא נמצאה' };
+  if (!r || (!canTouch(me, r.data) && me.role !== 'admin')) return { ok: false, message: 'הבקשה לא נמצאה' };
   if (r.data.status !== 'pending' && r.data.status !== 'approved') return { ok: false, message: 'אי אפשר לבטל את הבקשה הזאת' };
   var today = Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd');
   if (r.data.status === 'approved' && r.data.toDate < today && me.role !== 'admin') return { ok: false, message: 'אי אפשר לבטל נסיעה שכבר עברה' };
   // שומרים את הרכב שהיה משובץ, כדי שהמזכירה תראה איזה רכב התפנה
   updateRow('Requests', r.row, { status: 'cancelled', adminNote: r.data.status === 'approved' ? 'בוטל אחרי אישור' : r.data.adminNote, decidedAt: nowStr(), decidedBy: me.name });
   hist(r.data.status === 'approved' ? 'ביטול נסיעה מאושרת' : 'ביטול בקשה', r.data.userName, tripTxt(r.data) + (r.data.carId ? ' – ' + carNameOf(r.data.carId) : ''), r.data.id);
-  if (me.name !== r.data.userName) notify(r.data.userName, 'עדכון בנסיעה שלך', 'הנסיעה בוטלה: ' + tripTxt(r.data));
-  else if (r.data.status === 'approved') notifyAdmins(me.name + ' ביטל נסיעה מאושרת: ' + tripTxt(r.data) + ' – ' + carNameOf(r.data.carId) + ' התפנה', me.name);
+  notifyQ(r.data, 'עדכון בנסיעה שלך', 'הנסיעה בוטלה' + (me.role !== 'admin' && me.name !== r.data.userName ? ' ע״י ' + me.name : '') + ': ' + tripTxt(r.data));
+  if (me.role !== 'admin' && r.data.status === 'approved') notifyAdmins(me.name + ' ביטל נסיעה מאושרת: ' + tripTxt(r.data) + ' – ' + carNameOf(r.data.carId) + ' התפנה', me.name);
   return { ok: true };
 }
 
 /* ביטול ימים מסוימים מתוך בקשה של כמה ימים. הימים שנשארו ממשיכים עם אותו סטטוס ואותו רכב */
 function cancelDays(me, id, days) {
   var r = findRow('Requests', 'id', id);
-  if (!r || (r.data.userName !== me.name && me.role !== 'admin')) return { ok: false, message: 'הבקשה לא נמצאה' };
+  if (!r || (!canTouch(me, r.data) && me.role !== 'admin')) return { ok: false, message: 'הבקשה לא נמצאה' };
   var q = r.data;
   if (q.status !== 'pending' && q.status !== 'approved') return { ok: false, message: 'אי אפשר לבטל את הבקשה הזאת' };
   var all = dateList(q.fromDate, q.toDate);
@@ -251,8 +259,8 @@ function cancelDays(me, id, days) {
   });
   var daysTxt = dropRuns.map(function (run) { return rangeTxt(run[0], run[1]); }).join(', ');
   hist('ביטול ימים', q.userName, 'נסיעה ל' + q.destination + ': בוטלו ' + daysTxt, q.id);
-  if (me.name !== q.userName) notify(q.userName, 'עדכון בנסיעה שלך', 'בוטלו ימים בנסיעה ל' + q.destination + ': ' + daysTxt);
-  else if (q.status === 'approved') notifyAdmins(me.name + ' ביטל ימים בנסיעה ל' + q.destination + ': ' + daysTxt + ' – ' + carNameOf(q.carId) + ' התפנה בימים האלה', me.name);
+  notifyQ(q, 'עדכון בנסיעה שלך', 'בוטלו ימים בנסיעה ל' + q.destination + ': ' + daysTxt);
+  if (me.role !== 'admin' && q.status === 'approved') notifyAdmins(me.name + ' ביטל ימים בנסיעה ל' + q.destination + ': ' + daysTxt + ' – ' + carNameOf(q.carId) + ' התפנה בימים האלה', me.name);
   return { ok: true };
 }
 
@@ -330,10 +338,10 @@ function adminEdit(me, q) {
   var oldQ = JSON.parse(JSON.stringify(r.data));
   var newQ = { fromDate: from, toDate: to, departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), carId: carId };
   var ct = changeTxt(oldQ, newQ);
-  if (oldQ.status === 'approved' && !carId) notify(oldQ.userName, 'עדכון בנסיעה שלך', 'הנסיעה הוחזרה להמתנה: ' + tripTxt(newQ));
-  else if (oldQ.status !== 'approved' && carId) notify(oldQ.userName, 'הבקשה אושרה ✓', tripTxt(newQ) + ' – ' + carNameOf(carId));
-  else if (ct && carId) notify(oldQ.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + dest + ': ' + ct);
-  else if (oldQ.status === 'rejected' && !carId) notify(oldQ.userName, 'עדכון בבקשת הרכב', 'הבקשה שנדחתה הוחזרה לטיפול: ' + tripTxt(newQ));
+  if (oldQ.status === 'approved' && !carId) notifyQ(oldQ, 'עדכון בנסיעה שלך', 'הנסיעה הוחזרה להמתנה: ' + tripTxt(newQ));
+  else if (oldQ.status !== 'approved' && carId) notifyQ(oldQ, 'הבקשה אושרה ✓', tripTxt(newQ) + ' – ' + carNameOf(carId));
+  else if (ct && carId) notifyQ(oldQ, 'עדכון בנסיעה שלך', 'נסיעה ל' + dest + ': ' + ct);
+  else if (oldQ.status === 'rejected' && !carId) notifyQ(oldQ, 'עדכון בבקשת הרכב', 'הבקשה שנדחתה הוחזרה לטיפול: ' + tripTxt(newQ));
   hist(oldQ.status !== 'approved' && carId ? 'אישור (בעריכה)' : 'עריכה', oldQ.userName, 'נסיעה ל' + dest + ': ' + (ct || 'עודכנו פרטים') + (oldQ.status === 'rejected' ? ' (בקשה שנדחתה)' : ''), oldQ.id);
   var dd = '';
   if (dest === oldQ.destination && oldQ.dayDest) { var tq = trimDest({ fromDate: from, toDate: to, destination: dest, dayDest: oldQ.dayDest }); dd = tq.dayDest; dest = tq.destination; }
@@ -376,7 +384,7 @@ function approveDays(me, q) {
     else { o.id = newId(); appendRow('Requests', o); }
   });
   var dtxt = rr.map(function (a) { return rangeTxt(a[0], a[1]); }).join(', ');
-  notify(x.userName, 'הבקשה אושרה חלקית ✓', 'נסיעה ל' + x.destination + ': ' + dtxt + ' – ' + car.data.name + '. שאר הימים עדיין ממתינים לשיבוץ');
+  notifyQ(x, 'הבקשה אושרה חלקית ✓', 'נסיעה ל' + x.destination + ': ' + dtxt + ' – ' + car.data.name + '. שאר הימים עדיין ממתינים לשיבוץ');
   hist('אישור חלקי', x.userName, 'נסיעה ל' + x.destination + ': ' + dtxt + ' – ' + car.data.name, x.id);
   return { ok: true };
 }
@@ -436,13 +444,13 @@ function assignCars(me, changes) {
     if (sp) {
       updateRow('Requests', r.row, { fromDate: x.fromDate, toDate: x.toDate, destination: x.destination, dayDest: x.dayDest, carId: x.carId });
       var t = 'ב-' + runs(sp.days).map(function (r) { return rangeTxt(r[0], r[1]); }).join(', ') + ' בלבד: רכב ' + carNameOf(sp.orig.carId) + ' ← ' + carNameOf(sp.pieces[0].carId);
-      notify(x.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + sp.orig.destination + ': ' + t);
+      notifyQ(x, 'עדכון בנסיעה שלך', 'נסיעה ל' + sp.orig.destination + ': ' + t);
       hist('שינוי שיבוץ', x.userName, 'נסיעה ל' + sp.orig.destination + ': ' + t, x.id);
       return;
     }
     updateRow('Requests', r.row, { carId: x.carId, fromDate: x.fromDate, toDate: x.toDate, decidedAt: nowStr(), decidedBy: me.name });
     var ct = changeTxt(before[ch.id], x);
-    if (ct) { notify(x.userName, 'עדכון בנסיעה שלך', 'נסיעה ל' + x.destination + ': ' + ct); hist('שינוי שיבוץ', x.userName, 'נסיעה ל' + x.destination + ': ' + ct, x.id); }
+    if (ct) { notifyQ(x, 'עדכון בנסיעה שלך', 'נסיעה ל' + x.destination + ': ' + ct); hist('שינוי שיבוץ', x.userName, 'נסיעה ל' + x.destination + ': ' + ct, x.id); }
   });
   adds.forEach(function (a) { appendRow('Requests', a); });
   return { ok: true };
@@ -466,12 +474,12 @@ function swapCar(me, r, car) {
     }
   }
   updateRow('Requests', r.row, { carId: newCar, decidedAt: nowStr(), decidedBy: me.name });
-  notify(q.userName, 'עדכון בנסיעה שלך', tripTxt(q) + ': רכב ' + carNameOf(oldCar) + ' ← ' + car.data.name);
+  notifyQ(q, 'עדכון בנסיעה שלך', tripTxt(q) + ': רכב ' + carNameOf(oldCar) + ' ← ' + car.data.name);
   hist('החלפת רכב', q.userName, tripTxt(q) + ': רכב ' + carNameOf(oldCar) + ' ← ' + car.data.name, q.id);
   others.forEach(function (x) {
     var xr = findRow('Requests', 'id', x.id);
     updateRow('Requests', xr.row, { carId: oldCar, decidedAt: nowStr(), decidedBy: me.name });
-    notify(x.userName, 'עדכון בנסיעה שלך', tripTxt(x) + ': רכב ' + car.data.name + ' ← ' + carNameOf(oldCar));
+    notifyQ(x, 'עדכון בנסיעה שלך', tripTxt(x) + ': רכב ' + car.data.name + ' ← ' + carNameOf(oldCar));
   });
   return { ok: true, swapped: others.map(function (x) { return x.userName; }) };
 }
@@ -504,7 +512,7 @@ function historyData() {
 /* עובד מתקן בקשה שנדחתה ושולח אותה שוב */
 function resubmitRequest(me, q) {
   var r = findRow('Requests', 'id', q.id);
-  if (!r || r.data.userName !== me.name) return { ok: false, message: 'הבקשה לא נמצאה' };
+  if (!r || !canTouch(me, r.data)) return { ok: false, message: 'הבקשה לא נמצאה' };
   if (r.data.status !== 'rejected') return { ok: false, message: 'אפשר להגיש מחדש רק בקשה שנדחתה' };
   var from = cleanDate(q.fromDate), to = cleanDate(q.toDate) || from;
   if (!from) return { ok: false, message: 'יש לבחור תאריך' };
@@ -621,7 +629,7 @@ function closeFault(me, id) {
   if (!r) return { ok: false, message: 'התקלה לא נמצאה' };
   updateRow('Faults', r.row, { status: 'closed', closedAt: nowStr(), closedBy: me.name });
   var cn = carNameOf(r.data.carId);
-  if (r.data.userName !== me.name) notify(r.data.userName, 'עדכון על תקלה', 'התקלה שדיווחת ב' + cn + ' טופלה: ' + r.data.text, 'km');
+  if (r.data.userName !== me.name) notifyQ(r.data, 'עדכון על תקלה', 'התקלה שדיווחת ב' + cn + ' טופלה: ' + r.data.text, 'km');
   hist('תקלה טופלה', r.data.userName, cn + ': ' + r.data.text, '');
   return { ok: true };
 }
@@ -692,13 +700,13 @@ function decide(me, q) {
   if (q.decision === 'reject') {
     if (!clip(q.note, 200)) return { ok: false, message: 'יש לכתוב סיבה לדחייה' };
     updateRow('Requests', r.row, { status: 'rejected', carId: '', adminNote: clip(q.note, 200), decidedAt: nowStr(), decidedBy: me.name });
-    notify(r.data.userName, 'עדכון בבקשת הרכב', 'הבקשה נדחתה: ' + tripTxt(r.data) + (q.note ? ' · ' + clip(q.note, 200) : ''));
+    notifyQ(r.data, 'עדכון בבקשת הרכב', 'הבקשה נדחתה: ' + tripTxt(r.data) + (q.note ? ' · ' + clip(q.note, 200) : ''));
     hist('דחייה', r.data.userName, tripTxt(r.data) + ' · סיבה: ' + clip(q.note, 200), r.data.id);
     return { ok: true };
   }
   if (q.decision === 'unassign') {
     updateRow('Requests', r.row, { status: 'pending', carId: '', decidedAt: nowStr(), decidedBy: me.name });
-    notify(r.data.userName, 'עדכון בנסיעה שלך', 'הנסיעה הוחזרה להמתנה: ' + tripTxt(r.data));
+    notifyQ(r.data, 'עדכון בנסיעה שלך', 'הנסיעה הוחזרה להמתנה: ' + tripTxt(r.data));
     hist('החזרה להמתנה', r.data.userName, tripTxt(r.data) + (r.data.status === 'rejected' ? ' (בקשה שנדחתה)' : ''), r.data.id);
     return { ok: true };
   }
@@ -715,8 +723,8 @@ function decide(me, q) {
   var wasApproved = r.data.status === 'approved', oldCar = r.data.carId;
   updateRow('Requests', r.row, { status: 'approved', carId: q.carId, adminNote: clip(q.note, 200), decidedAt: nowStr(), decidedBy: me.name });
   hist(wasApproved ? 'החלפת רכב' : (r.data.status === 'rejected' ? 'אישור בקשה שנדחתה' : 'אישור'), r.data.userName, tripTxt(r.data) + ' – ' + (wasApproved ? carNameOf(oldCar) + ' ← ' : '') + car.data.name, r.data.id);
-  if (!wasApproved) notify(r.data.userName, 'הבקשה אושרה ✓', tripTxt(r.data) + ' – ' + car.data.name + (q.note ? ' · ' + clip(q.note, 200) : ''));
-  else if (oldCar !== q.carId) notify(r.data.userName, 'עדכון בנסיעה שלך', tripTxt(r.data) + ': רכב ' + carNameOf(oldCar) + ' ← ' + car.data.name);
+  if (!wasApproved) notifyQ(r.data, 'הבקשה אושרה ✓', tripTxt(r.data) + ' – ' + car.data.name + (q.note ? ' · ' + clip(q.note, 200) : ''));
+  else if (oldCar !== q.carId) notifyQ(r.data, 'עדכון בנסיעה שלך', tripTxt(r.data) + ': רכב ' + carNameOf(oldCar) + ' ← ' + car.data.name);
   return { ok: true };
 }
 
@@ -1066,6 +1074,13 @@ function pushUnsubscribe(endpoint) {
 
 /* הודעות נאספות בזמן הפעולה ונשלחות בסופה, אחרי שהנעילה שוחררה */
 var NOTICE_QUEUE = [];
+/* התראה על בקשה: למי שהנסיעה שלו, וגם למי שהזמין אותה עבורו (אם זה מישהו אחר). לא שולחים למי שביצע את הפעולה */
+function notifyQ(x, title, text, view) {
+  var who = ME && ME.name;
+  if (x.userName && x.userName !== who) notify(x.userName, title, text, view);
+  if (x.requestedBy && x.requestedBy !== x.userName && x.requestedBy !== who) notify(x.requestedBy, title, 'עבור ' + x.userName + ': ' + text, view);
+}
+function canTouch(me, x) { return x.userName === me.name || (x.requestedBy && x.requestedBy === me.name); }
 function notify(userName, title, text, view) { if (userName) NOTICE_QUEUE.push({ userName: userName, title: title, text: text, view: view || 'mine' }); }
 function notifyAdmins(text, exceptName) {
   var admins = readRows('Users').filter(function (u) { return u.role === 'admin'; }).map(function (u) { return u.name; });

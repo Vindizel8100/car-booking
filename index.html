@@ -191,6 +191,14 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <section id="vNew" class="wrap hidden">
   <form id="newForm" class="stack">
     <div id="resubBanner" class="note hidden" style="flex-direction:column;gap:6px"></div>
+    <div id="forBox" class="stack" style="gap:8px">
+      <button type="button" class="btn ghost sm" id="forOpen" style="align-self:flex-start;border:1px dashed var(--accent);color:var(--accent)">+ הבקשה עבור עובד אחר</button>
+      <div id="forPanel" class="stack hidden" style="gap:8px;background:var(--accent-l);border-radius:12px;padding:12px">
+        <div style="display:flex;align-items:center;gap:8px"><b style="flex:1;color:var(--accent-d)">הרכב עבור עובד אחר</b><button type="button" class="btn ghost sm" id="forClose">הסר</button></div>
+        <label class="f">עבור מי הרכב?<select class="i" id="nFor"></select></label>
+        <span class="muted" style="font-size:13px">הרכב ישוריין על שמו. שניכם תקבלו התראה על האישור, והוא יקבל את התזכורת לדיווח קילומטראז'</span>
+      </div>
+    </div>
     <div class="row2">
       <label class="f">מתאריך<input class="i" type="date" id="nFrom" required></label>
       <label class="f">עד תאריך<input class="i" type="date" id="nTo" required></label>
@@ -380,7 +388,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-26-2';
+var APP_VERSION = '2026-11-26-3';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -463,7 +471,7 @@ $('logoutBtn').addEventListener('click', logout);
 function start() {
   show($('vLogin'), false); show($('topBar'), true); show($('loading'), false);
   if (S.role === 'admin') { if (!S.data) S.data = loadC('admin'); }
-  else { if (!S.mine) S.mine = loadC('mine'); if (!S.board) S.board = loadC('board'); if (!S.ntf) S.ntf = loadC('ntf'); }
+  else { if (!S.peers) S.peers = loadC('peers'); if (!S.mine) S.mine = loadC('mine'); if (!S.board) S.board = loadC('board'); if (!S.ntf) S.ntf = loadC('ntf'); }
   $('hello').textContent = 'שלום, ' + S.name;
   var tabs = S.role === 'admin'
     ? [['board', 'לוח וממתינים'], ['req', 'רשימת בקשות'], ['report', 'דוח חודשי'], ['hist', 'היסטוריה'], ['users', 'עובדים'], ['cars', 'רכבים']]
@@ -505,7 +513,18 @@ document.addEventListener('click', function (e) {
   e.preventDefault(); endResubmit();
   ['nDest', 'nProj', 'nNotes', 'nFrom', 'nTo'].forEach(function (id) { $(id).value = ''; }); clearDays(); initNew();
 });
-function endResubmit() { S.resubmit = null; show($('resubBanner'), false); $('nBtn').textContent = 'שלח בקשה'; }
+function endResubmit() { S.resubmit = null; show($('resubBanner'), false); show($('forBox'), true); $('nBtn').textContent = 'שלח בקשה'; }
+/* בקשה עבור עובד אחר */
+function forName() { return $('forPanel').classList.contains('hidden') ? '' : $('nFor').value; }
+function forLabel() { if (!S.resubmit) $('nBtn').textContent = forName() ? 'שלח בקשה עבור ' + forName() : 'שלח בקשה'; }
+function fillFor() {
+  var keep = $('nFor').value, list = S.peers || [];
+  $('nFor').innerHTML = '<option value="">בחר עובד…</option>' + list.map(function (n) { return '<option' + (n === keep ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+}
+function closeFor() { show($('forPanel'), false); show($('forOpen'), true); $('nFor').value = ''; forLabel(); }
+$('forOpen').addEventListener('click', function () { fillFor(); show($('forPanel'), true); show(this, false); forLabel(); setTimeout(function () { $('nFor').focus(); }, 30); });
+$('forClose').addEventListener('click', closeFor);
+$('nFor').addEventListener('change', forLabel);
 /* ---- יעד לכל יום ---- */
 function parseDD(v) { if (!v) return {}; if (typeof v === 'object') return v; try { return JSON.parse(v) || {}; } catch (e) { return {}; } }
 function destOn(q, d) { return parseDD(q.dayDest)[d] || q.destination; }
@@ -557,6 +576,10 @@ $('newForm').addEventListener('submit', function (e) {
   var q = { fromDate: $('nFrom').value, toDate: $('nTo').value, departTime: $('nTime').value,
     destination: dst.destination, dayDest: dst.dayDest, project: $('nProj').value.trim(), notes: $('nNotes').value.trim() };
   if (q.toDate < q.fromDate) return msg($('nMsg'), 'תאריך הסיום לפני תאריך ההתחלה');
+  if (!S.resubmit && !$('forPanel').classList.contains('hidden')) {
+    if (!$('nFor').value) { $('nFor').focus(); return msg($('nMsg'), 'בחר עבור מי הרכב, או לחץ "הסר" כדי לבקש לעצמך'); }
+    q.forUser = $('nFor').value;
+  }
   if (S.resubmit) {
     var rid = S.resubmit; q.id = rid;
     var old = null; S.mine.requests.forEach(function (x) { if (x.id === rid) old = x; });
@@ -572,19 +595,20 @@ $('newForm').addEventListener('submit', function (e) {
     return;
   }
   var now = new Date();
-  var local = { id: 'tmp' + Date.now(), userName: S.name, fromDate: q.fromDate, toDate: q.toDate, departTime: q.departTime, destination: q.destination, dayDest: q.dayDest ? JSON.stringify(q.dayDest) : '',
+  var local = { id: 'tmp' + Date.now(), userName: q.forUser || S.name, requestedBy: q.forUser ? S.name : '', fromDate: q.fromDate, toDate: q.toDate, departTime: q.departTime, destination: q.destination, dayDest: q.dayDest ? JSON.stringify(q.dayDest) : '',
     project: q.project, notes: q.notes, status: 'pending', carId: '', adminNote: '', createdAt: iso(now) + ' ' + ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2), sending: true };
   S.mine = S.mine || { requests: [], cars: [] };
   S.mine.requests.unshift(local);
   var keepDays = JSON.parse(JSON.stringify(dayVals));
-  $('nDest').value = ''; $('nProj').value = ''; $('nNotes').value = ''; $('nFrom').value = ''; $('nTo').value = ''; clearDays();
+  $('nDest').value = ''; $('nProj').value = ''; $('nNotes').value = ''; $('nFrom').value = ''; $('nTo').value = ''; clearDays(); closeFor();
   go('mine', true);
   api('createRequest', q).then(function (r) {
     if (!r.ok) {
       S.mine.requests = S.mine.requests.filter(function (x) { return x !== local; });
       renderMine();
       $('nDest').value = q.dayDest ? '' : q.destination; $('nProj').value = q.project; $('nNotes').value = q.notes; $('nFrom').value = q.fromDate; $('nTo').value = q.toDate;
-      dayVals = keepDays; go('new', true); msg($('nMsg'), r.message);
+      dayVals = keepDays; if (q.forUser) { fillFor(); show($('forPanel'), true); show($('forOpen'), false); $('nFor').value = q.forUser; forLabel(); }
+      go('new', true); msg($('nMsg'), r.message);
       return;
     }
     applyMine(r);
@@ -595,6 +619,7 @@ function loadMine() {
   if (!S.mine) $('mineList').innerHTML = '<div class="center"><span class="spin"></span></div>';
   api('myRequests').then(function (r) {
     if (!r.ok) { if (!S.mine) $('mineList').innerHTML = '<div class="msg err">' + esc(r.message) + '</div>'; return; }
+    if (r.users) { S.peers = r.users; saveC('peers', S.peers); if (!$('forPanel').classList.contains('hidden')) fillFor(); }
     if (fresh(r)) { S.mine = { requests: r.requests, cars: r.cars }; saveC('mine', S.mine); renderMine(); checkNotices(S.mine.requests); }
   });
 }
@@ -703,6 +728,7 @@ function renderMine() {
     var info = [q.departTime ? 'יציאה ' + q.departTime : '', q.project ? 'פרויקט ' + q.project : '', 'נשלח ' + dm(q.createdAt.slice(0, 10)) + ' ' + q.createdAt.slice(11)].filter(Boolean).join(' · ');
     return '<article class="card req"><div class="h"><b>' + range(q.fromDate, q.toDate) + ' · ' + esc(q.destination) + '</b><span class="pill p-' + q.status + '">' + (q.sending ? 'נשלח…' : ST[q.status]) + '</span></div>' +
       (q.status === 'approved' ? '<div class="carbox"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0F5A37" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17h14v-4.5l-2-5H7l-2 5V17z"/><path d="M5 12.5h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg><div><b>' + esc(car ? car.name : 'רכב') + '</b>' + (car && car.plate ? '<div class="muted">מ"ר ' + esc(car.plate) + '</div>' : '') + '</div></div>' : '') +
+      (q.requestedBy ? '<span class="pill" style="background:var(--accent-l);color:var(--accent-d);align-self:flex-start">' + (q.userName === S.name ? 'הוזמן ע״י ' + esc(q.requestedBy) : 'עבור ' + esc(q.userName)) + '</span>' : '') +
       ddLines(q) + '<span class="muted">' + esc(info) + '</span>' +
       (q.notes ? '<span class="muted">הערות: ' + esc(q.notes) + '</span>' : '') +
       (q.adminNote ? '<span class="muted"><b>הערת המזכירה:</b> ' + esc(q.adminNote) + '</span>' : '') +
@@ -727,7 +753,7 @@ $('mineList').addEventListener('click', function (e) {
     clearDays(); dayVals = JSON.parse(JSON.stringify(parseDD(rq.dayDest)));
     $('nDest').value = rq.dayDest ? '' : rq.destination; $('nProj').value = rq.project; $('nNotes').value = rq.notes;
     $('resubBanner').innerHTML = '<b>עריכת בקשה שנדחתה</b><span>סיבת הדחייה: ' + esc(rq.adminNote || '—') + '</span><span>תקן את מה שצריך ולחץ "הגש שוב". <a href="#" id="resubCancel">ביטול העריכה</a></span>';
-    show($('resubBanner'), true); $('nBtn').textContent = 'הגש שוב';
+    show($('resubBanner'), true); closeFor(); show($('forBox'), false); $('nBtn').textContent = 'הגש שוב';
     go('new', true);
     return;
   }
@@ -1386,7 +1412,7 @@ function renderAdmin() {
     var sg = suggestCar(q, free);
     var opts = free.length ? free.map(function (c) { return '<option value="' + c.id + '"' + (sg && sg.id === c.id ? ' selected' : '') + '>' + esc(c.name) + (sg && sg.id === c.id ? ' ⭐ מומלץ' : '') + '</option>'; }).join('') : '<option value="">אין רכב פנוי</option>';
     return '<div class="arow" data-id="' + q.id + '">' +
-      '<div class="c"><b>' + esc(q.userName) + '</b><span class="muted">נשלח ' + esc(q.createdAt) + '</span></div>' +
+      '<div class="c"><b>' + esc(q.userName) + '</b><span class="muted">' + (q.requestedBy ? 'ביקש: ' + esc(q.requestedBy) + ' · ' : '') + 'נשלח ' + esc(q.createdAt) + '</span></div>' +
       '<div class="c"><b style="font-weight:500">' + range(q.fromDate, q.toDate) + ' · ' + dayName(q.fromDate) + '</b><span class="muted">' + (q.departTime ? 'יציאה ' + esc(q.departTime) : '') + '</span></div>' +
       '<div class="c w"><b style="font-weight:500">' + esc(q.destination) + '</b>' + ddLines(q) + '<span class="muted">' + (q.project ? 'פרויקט ' + esc(q.project) : '') + (q.notes ? ' · ' + esc(q.notes) : '') + '</span></div>' +
       '<div class="acts"><label class="f" style="font-size:13px;color:var(--muted)">רכב פנוי<select class="i" data-car>' + opts + '</select>' + (sg && sg.why ? '<span style="font-size:12px;color:var(--ok)">' + esc(sg.why) + '</span>' : '') + '</label>' +
@@ -1475,7 +1501,7 @@ function renderBoard() {
       var w = reqs.filter(function (r) { return r.status === 'pending' && r.fromDate <= d && r.toDate >= d; });
       h += '<div class="gq">' + (w.length ? w.map(function (r) {
         var n = dateList(r.fromDate, r.toDate).length;
-        return '<button type="button" class="chip' + (pick && pick.id === r.id ? ' on' : '') + '" data-pick="' + r.id + '">' + esc(r.userName) + '<small>' + esc(destOn(r, d)) + (n > 1 ? ' · ' + n + ' ימים' : '') + '</small></button>';
+        return '<button type="button" class="chip' + (pick && pick.id === r.id ? ' on' : '') + '" data-pick="' + r.id + '">' + esc(r.userName) + '<small>' + esc(destOn(r, d)) + (n > 1 ? ' · ' + n + ' ימים' : '') + (r.requestedBy ? ' · ביקש: ' + esc(r.requestedBy) : '') + '</small></button>';
       }).join('') : '<span class="muted" style="font-size:12px;text-align:center">—</span>') + '</div>';
     });
   }
@@ -1505,6 +1531,7 @@ function renderPickBar(pick, fullIds) {
   var free = carsActive().filter(function (c) { return fullIds.indexOf(c.id) >= 0; }), sg = suggestCar(pick, free);
   var days = weekDays(), visible = pick.toDate >= days[0] && pick.fromDate <= days[4];
   $('pickBar').innerHTML = '<span><b>' + esc(pick.userName) + '</b> · ' + esc(pick.destination) + ' · ' + range(pick.fromDate, pick.toDate) + (pick.project ? ' · פרויקט ' + esc(pick.project) : '') + '</span>' +
+    (pick.requestedBy ? '<span class="pill" style="background:#2E3B49;color:#DDE5EE">הוזמן ע״י ' + esc(pick.requestedBy) + '</span>' : '') +
     (visible ? '<span style="color:#C9D3DE">' + (free.length ? 'לחצי על משבצת ירוקה כדי לשבץ' : 'אין רכב פנוי בכל הימים – אפשר לשבץ חלקית במשבצות המקווקוות') + '</span>' : '<button class="btn ghost sm" type="button" data-pb="week">עבור לשבוע של הבקשה</button>') +
     (sg && carById(sg.id) ? '<button class="btn ok sm" type="button" data-pb="sg" data-car="' + sg.id + '">אשר עם ' + esc(carById(sg.id).name) + ' (מומלץ)</button>' : '') +
     '<button class="btn sm" type="button" data-pb="rej" style="background:#fff;color:var(--bad)">דחה</button>' +
@@ -1636,7 +1663,7 @@ function openTrip(id, keep) {
   if (cur && !cars.some(function (c) { return c.id === cur.id; })) cars.unshift(cur);
   var today = iso(new Date()), days = dateList(q.fromDate, q.toDate);
   $('tripPanel').innerHTML = '<div style="display:flex;align-items:center;gap:8px"><h2 style="margin:0;flex:1">נסיעה של ' + esc(q.userName) + '</h2><span class="pill p-approved">מאושרת</span><button class="btn ghost sm" type="button" data-tp="x" aria-label="סגור">✕</button></div>' +
-    '<span class="muted">' + (q.notes ? 'הערת העובד: ' + esc(q.notes) + ' · ' : '') + 'אושר ' + esc(q.decidedAt || '') + '</span>' + ddLines(q) +
+    '<span class="muted">' + (q.requestedBy ? 'הוזמן ע״י ' + esc(q.requestedBy) + ' · ' : '') + (q.notes ? 'הערת העובד: ' + esc(q.notes) + ' · ' : '') + 'אושר ' + esc(q.decidedAt || '') + '</span>' + ddLines(q) +
     '<label class="f">רכב<select class="i" data-k="carId">' + cars.map(function (c) { return '<option value="' + c.id + '"' + (c.id === q.carId ? ' selected' : '') + '>' + esc(c.name) + (c.plate ? ' · ' + esc(c.plate) : '') + '</option>'; }).join('') + '</select></label>' +
     '<div class="row2"><label class="f">מתאריך<input class="i" type="date" data-k="fromDate" value="' + q.fromDate + '"></label><label class="f">עד תאריך<input class="i" type="date" data-k="toDate" value="' + q.toDate + '"></label></div>' +
     '<div class="row2"><label class="f">שעת יציאה<input class="i" type="time" data-k="departTime" value="' + esc(q.departTime || '') + '"></label><label class="f">מספר פרויקט<input class="i" data-k="project" maxlength="40" value="' + esc(q.project || '') + '"></label></div>' +
