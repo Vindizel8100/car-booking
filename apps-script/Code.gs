@@ -186,6 +186,7 @@ function myRequests(name) {
     .sort(function (a, b) { return b.createdAt < a.createdAt ? -1 : 1; }).slice(0, 50);
 }
 
+function todayStr() { return Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd'); }
 function createRequest(me, q) {
   var from = cleanDate(q.fromDate), to = cleanDate(q.toDate) || from;
   if (!from) return { ok: false, message: 'יש לבחור תאריך' };
@@ -198,14 +199,37 @@ function createRequest(me, q) {
     if (!fu) return { ok: false, message: 'העובד שבחרת לא נמצא ברשימה' };
     owner = fu.data.name; by = me.name;
   }
-  var nid = newId();
+  /* שריון עצמי: העובד בחר רכב שפנוי בכל הימים – הנסיעה מאושרת מיד, בלי המזכירה */
+  var selfCar = null;
+  if (q.carId) {
+    if (!clip(q.project, 40)) return { ok: false, message: 'כדי לשריין רכב בעצמך יש למלא מספר פרויקט' };
+    if (from < todayStr()) return { ok: false, message: 'אי אפשר לשריין רכב לתאריך שעבר' };
+    var cr = findRow('Cars', 'id', String(q.carId));
+    if (!cr || cr.data.active !== 'yes') return { ok: false, message: 'הרכב לא נמצא. רענן את הדף' };
+    var busy = readRows('Requests').filter(function (x) { return x.status === 'approved' && x.carId === cr.data.id && x.fromDate <= to && x.toDate >= from; });
+    if (busy.length) return { ok: false, message: cr.data.name + ' כבר תפוס ב' + rangeTxt(busy[0].fromDate > from ? busy[0].fromDate : from, busy[0].toDate < to ? busy[0].toDate : to) + '. בחר רכב אחר או שלח בלי רכב והמזכירה תשבץ', busy: true };
+    var mtc = maintClash(cr.data.id, from, to);
+    if (mtc) return { ok: false, message: maintMsg(cr.data.name, mtc), busy: true };
+    var mine2 = readRows('Requests').filter(function (x) { return x.status === 'approved' && x.userName === owner && x.fromDate <= to && x.toDate >= from; });
+    if (mine2.length) return { ok: false, message: (owner === me.name ? 'כבר יש לך' : 'ל' + owner + ' כבר יש') + ' רכב משובץ ב' + rangeTxt(mine2[0].fromDate, mine2[0].toDate) };
+    selfCar = cr.data;
+  }
+  var nid = newId(), stamp = nowStr();
   appendRow('Requests', {
     id: nid,
     userName: owner, fromDate: from, toDate: to,
     departTime: clip(q.departTime, 5), destination: dest, project: clip(q.project, 40), notes: clip(q.notes, 300),
-    status: 'pending', carId: '', adminNote: '', createdAt: nowStr(), decidedAt: '', decidedBy: '', dayDest: cleanDayDest(q.dayDest, from, to), requestedBy: by
+    status: selfCar ? 'approved' : 'pending', carId: selfCar ? selfCar.id : '', adminNote: '', createdAt: stamp,
+    decidedAt: selfCar ? stamp : '', decidedBy: selfCar ? 'שריון עצמי' : '', dayDest: cleanDayDest(q.dayDest, from, to), requestedBy: by
   });
   var tt = rangeTxt(from, to) + ' · ' + dest + (q.project ? ' · פרויקט ' + clip(q.project, 40) : '');
+  if (selfCar) {
+    var ct2 = tt + ' – ' + selfCar.name;
+    // בלי התראה למזכירה: השריון מופיע בלוח ובהיסטוריה, וזה כל הרעיון – פחות התעסקות שלה
+    if (by) notify(owner, 'שוריין לך רכב ✓', by + ' שריין עבורך: ' + ct2);
+    hist('שריון עצמי', owner, ct2 + (by ? ' · שוריין ע״י ' + by : ''), nid);
+    return { ok: true, booked: true, carName: selfCar.name };
+  }
   notifyAdmins(by ? 'בקשה חדשה עבור ' + owner + ' (ביקש: ' + by + '): ' + tt : 'בקשה חדשה מ' + me.name + ': ' + tt, me.name);
   if (by) notify(owner, 'הוזמן עבורך רכב', by + ' ביקש עבורך רכב: ' + tt + '. תקבל עדכון כשהמזכירה תאשר');
   hist('בקשה חדשה', owner, tt + (by ? ' · הוזמן ע״י ' + by : ''), nid);

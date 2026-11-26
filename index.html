@@ -93,6 +93,13 @@ h2{margin:0 0 6px;font-size:19px;font-weight:800}
 .legend span{display:flex;align-items:center;gap:6px}
 .sw{width:14px;height:14px;border-radius:4px;display:inline-block}
 #bStats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}#bStats .stat{padding:10px 14px}#bStats .stat b{font-size:24px}
+.carGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.cpick{border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 12px;text-align:right;font:inherit;color:var(--ink);cursor:pointer;display:flex;flex-direction:column;gap:2px;min-height:64px}
+.cpick small{font-size:13px}
+.cpick.free small{color:var(--ok);font-weight:700}
+.cpick.on{border:2px solid var(--accent);background:var(--accent-l)}
+.cpick:disabled{background:#F1F3F5;color:var(--muted);cursor:not-allowed}
+.cpick:disabled small{color:var(--muted);font-weight:400}
 .gq{display:flex;flex-direction:column;gap:5px;background:#FFFBF0;border-radius:10px;padding:5px;min-height:44px;justify-content:center}
 .chip{border:1px solid #E8C877;background:var(--warn-bg);color:var(--warn);border-radius:9px;padding:5px 8px;font-weight:700;font-size:13px;text-align:right;cursor:pointer;min-height:40px;line-height:1.25}
 .chip small{display:block;font-weight:400;font-size:12px}
@@ -211,8 +218,13 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
       <div id="nDayList" class="stack" style="gap:6px"></div>
     </div>
     <label class="f">מספר פרויקט<input class="i" id="nProj" maxlength="40" inputmode="numeric"></label>
+    <div id="carPick" class="stack hidden" style="gap:8px">
+      <b style="font-size:16px">רכב</b>
+      <span class="muted" style="font-size:13px;margin-top:-6px">בוחרים רכב שפנוי בכל הימים, והוא משוריין מיד בלי לחכות לאישור. אפשר גם להשאיר למזכירה לבחור.</span>
+      <div id="carList" class="carGrid" role="radiogroup" aria-label="בחירת רכב"></div>
+    </div>
     <label class="f">הערות (לא חובה)<textarea class="i" id="nNotes" maxlength="300" placeholder="למשל: צריך רכב עם וו גרירה"></textarea></label>
-    <div class="note"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/></svg><span>הבקשה תישלח למזכירה לאישור. הסטטוס יתעדכן ב"הבקשות שלי".</span></div>
+    <div class="note"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink:0"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/></svg><span id="nNote">הבקשה תישלח למזכירה לאישור. הסטטוס יתעדכן ב"הבקשות שלי".</span></div>
     <div id="nMsg" class="msg hidden"></div>
     <button class="btn big" id="nBtn" type="submit">שלח בקשה</button>
   </form>
@@ -243,7 +255,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 </section>
 
 <!-- עובד: הבקשות שלי -->
-<section id="vMine" class="wrap hidden"><div id="mineList" class="list"></div></section>
+<section id="vMine" class="wrap hidden"><div id="mineMsg" class="msg hidden" style="margin-bottom:12px"></div><div id="mineList" class="list"></div></section>
 
 <!-- התראות (עובד) -->
 <section id="vNtf" class="wrap hidden"><div id="ntfList" class="list"></div></section>
@@ -388,7 +400,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-26-5';
+var APP_VERSION = '2026-11-26-6';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -514,9 +526,54 @@ document.addEventListener('click', function (e) {
   ['nDest', 'nProj', 'nNotes', 'nFrom', 'nTo'].forEach(function (id) { $(id).value = ''; }); clearDays(); initNew();
 });
 function endResubmit() { S.resubmit = null; show($('resubBanner'), false); show($('forBox'), !!S.peers); $('nBtn').textContent = 'שלח בקשה'; }
+/* ---- בחירת רכב עצמית בבקשה ---- */
+S.pickCar = '';
+function carState(c, days) {
+  var b = S.board || { requests: [], maint: [] }, freeDays = [];
+  days.forEach(function (d) {
+    var taken = (b.requests || []).some(function (r) { return r.status === 'approved' && r.carId === c.id && r.fromDate <= d && r.toDate >= d; });
+    var mt = (b.maint || []).some(function (m) { return m.carId === c.id && m.fromDate <= d && m.toDate >= d; });
+    if (!taken && !mt) freeDays.push(d);
+  });
+  return freeDays;
+}
+function renderCarPick() {
+  var f = $('nFrom').value, t = $('nTo').value || f, cars = (S.board && S.board.cars) || (S.mine && S.mine.cars) || [];
+  var ok = f && t >= f && f >= iso(new Date()) && !S.resubmit && cars.length && S.board;
+  show($('carPick'), !!ok);
+  if (!ok) { if (S.pickCar) { S.pickCar = ''; pickLabel(); } return; }
+  var days = dateList(f, t), anyFree = false;
+  var h = '<button type="button" class="cpick' + (!S.pickCar ? ' on' : '') + '" data-cp="" role="radio" aria-checked="' + (!S.pickCar) + '"><b>בלי העדפה</b><small style="color:var(--muted);font-weight:400">המזכירה תבחר ותאשר</small></button>';
+  cars.forEach(function (c) {
+    var fd = carState(c, days), full = fd.length === days.length;
+    if (full) anyFree = true;
+    if (!full && S.pickCar === c.id) S.pickCar = '';
+    var sub = full ? (days.length > 1 ? 'פנוי בכל הימים' : 'פנוי') : fd.length ? 'פנוי רק ב-' + fd.map(function (d) { return dm(d); }).join(', ') : 'תפוס';
+    h += '<button type="button" class="cpick' + (full ? ' free' : '') + (S.pickCar === c.id ? ' on' : '') + '" data-cp="' + c.id + '" role="radio" aria-checked="' + (S.pickCar === c.id) + '"' + (full ? '' : ' disabled') + '><b>' + esc(c.name) + '</b>' + (c.plate ? '<span class="muted" style="font-size:12px">' + ltr(esc(c.plate)) + '</span>' : '') + '<small>' + sub + '</small></button>';
+  });
+  if (!anyFree) h += '<span class="muted" style="grid-column:1/-1;font-size:13px">אין רכב פנוי בכל הימים. שלח בלי רכב והמזכירה תנסה לשבץ.</span>';
+  $('carList').innerHTML = h;
+  pickLabel();
+}
+function pickLabel() {
+  var c = S.pickCar && ((S.board && S.board.cars) || []).filter(function (x) { return x.id === S.pickCar; })[0];
+  $('nProj').required = !!c;
+  $('nNote').textContent = c ? 'הרכב ישוריין מיד, בלי לחכות לאישור. תמיד אפשר לבטל ב"הבקשות שלי".' : 'הבקשה תישלח למזכירה לאישור. הסטטוס יתעדכן ב"הבקשות שלי".';
+  $('nProj').parentNode.firstChild.textContent = c ? 'מספר פרויקט (חובה לשריון)' : 'מספר פרויקט';
+  if (S.resubmit) return;
+  var who = forName();
+  $('nBtn').textContent = c ? 'שריין את ' + c.name + (who ? ' עבור ' + who : '') : (who ? 'שלח בקשה עבור ' + who : 'שלח בקשה');
+}
+$('carList').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-cp]'); if (!b || b.disabled) return;
+  S.pickCar = b.getAttribute('data-cp'); renderCarPick();
+  if (S.pickCar && !$('nProj').value.trim()) $('nProj').focus();
+});
+['nFrom', 'nTo'].forEach(function (id) { $(id).addEventListener('change', function () { setTimeout(renderCarPick, 0); if (!S.boardAt || Date.now() - S.boardAt > 30000) loadBoard(); }); });
+
 /* בקשה עבור עובד אחר */
 function forName() { return $('forPanel').classList.contains('hidden') ? '' : $('nFor').value; }
-function forLabel() { if (!S.resubmit) $('nBtn').textContent = forName() ? 'שלח בקשה עבור ' + forName() : 'שלח בקשה'; }
+function forLabel() { pickLabel(); }
 function fillFor() {
   var keep = $('nFor').value, list = S.peers || [];
   $('nFor').innerHTML = '<option value="">בחר עובד…</option>' + list.map(function (n) { return '<option' + (n === keep ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
@@ -565,6 +622,8 @@ function initNew() {
   $('nTo').min = $('nFrom').value;
   msg($('nMsg'), '');
   renderDays();
+  renderCarPick();
+  if (S.role === 'user' && (!S.boardAt || Date.now() - S.boardAt > 30000)) loadBoard();
 }
 $('nFrom').addEventListener('change', function () { $('nTo').min = this.value; if (!$('nTo').value || $('nTo').value < this.value) $('nTo').value = this.value; });
 ['nFrom', 'nTo'].forEach(function (id) { $(id).addEventListener('change', renderDays); });
@@ -576,6 +635,10 @@ $('newForm').addEventListener('submit', function (e) {
   var q = { fromDate: $('nFrom').value, toDate: $('nTo').value, departTime: $('nTime').value,
     destination: dst.destination, dayDest: dst.dayDest, project: $('nProj').value.trim(), notes: $('nNotes').value.trim() };
   if (q.toDate < q.fromDate) return msg($('nMsg'), 'תאריך הסיום לפני תאריך ההתחלה');
+  if (!S.resubmit && S.pickCar) {
+    if (!q.project) { $('nProj').focus(); return msg($('nMsg'), 'כדי לשריין רכב בעצמך יש למלא מספר פרויקט'); }
+    q.carId = S.pickCar;
+  }
   if (!S.resubmit && !$('forPanel').classList.contains('hidden')) {
     if (!$('nFor').value) { $('nFor').focus(); return msg($('nMsg'), 'בחר עבור מי הרכב, או לחץ "הסר" כדי לבקש לעצמך'); }
     q.forUser = $('nFor').value;
@@ -596,11 +659,13 @@ $('newForm').addEventListener('submit', function (e) {
   }
   var now = new Date();
   var local = { id: 'tmp' + Date.now(), userName: q.forUser || S.name, requestedBy: q.forUser ? S.name : '', fromDate: q.fromDate, toDate: q.toDate, departTime: q.departTime, destination: q.destination, dayDest: q.dayDest ? JSON.stringify(q.dayDest) : '',
-    project: q.project, notes: q.notes, status: 'pending', carId: '', adminNote: '', createdAt: iso(now) + ' ' + ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2), sending: true };
+    project: q.project, notes: q.notes, status: q.carId ? 'approved' : 'pending', carId: q.carId || '', decidedBy: q.carId ? 'שריון עצמי' : '', adminNote: '', createdAt: iso(now) + ' ' + ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2), sending: true };
   S.mine = S.mine || { requests: [], cars: [] };
   S.mine.requests.unshift(local);
   var keepDays = JSON.parse(JSON.stringify(dayVals));
-  $('nDest').value = ''; $('nProj').value = ''; $('nNotes').value = ''; $('nFrom').value = ''; $('nTo').value = ''; clearDays(); closeFor();
+  var keepCar = S.pickCar;
+  $('nDest').value = ''; $('nProj').value = ''; $('nNotes').value = ''; $('nFrom').value = ''; $('nTo').value = ''; clearDays(); closeFor(); S.pickCar = '';
+  show($('mineMsg'), false);
   go('mine', true);
   api('createRequest', q).then(function (r) {
     if (!r.ok) {
@@ -608,8 +673,15 @@ $('newForm').addEventListener('submit', function (e) {
       renderMine();
       $('nDest').value = q.dayDest ? '' : q.destination; $('nProj').value = q.project; $('nNotes').value = q.notes; $('nFrom').value = q.fromDate; $('nTo').value = q.toDate;
       dayVals = keepDays; if (q.forUser) { fillFor(); show($('forPanel'), true); show($('forOpen'), false); $('nFor').value = q.forUser; forLabel(); }
+      S.pickCar = r.busy ? '' : (keepCar || '');
       go('new', true); msg($('nMsg'), r.message);
+      if (r.busy) { S.boardAt = 0; loadBoard(); }
       return;
+    }
+    if (q.carId) {
+      if (r.booked) msg($('mineMsg'), '✓ ' + (r.carName || 'הרכב') + ' שוריין ' + (q.forUser ? 'עבור ' + q.forUser : 'לך') + ' ל' + range(q.fromDate, q.toDate) + '. לא צריך לחכות לאישור.', true);
+      else msg($('mineMsg'), 'הבקשה נשלחה למזכירה לאישור.', true);
+      S.boardAt = 0; loadBoard();
     }
     applyMine(r);
   });
@@ -648,6 +720,7 @@ function checkNotices(list) {
     if (old === sig(q)) return;
     var when = range(q.fromDate, q.toDate) + ' · ' + q.destination, car = cars[q.carId] ? ' – ' + cars[q.carId] : '';
     var o = old ? old.split('|') : null;
+    if (!o && q.decidedBy === 'שריון עצמי' && (q.requestedBy ? q.requestedBy === S.name : q.userName === S.name)) return;
     var text;
     if (!o) text = q.status === 'approved' ? 'נוספה לך נסיעה: ' + when + car : null;
     else if (o[0] !== q.status) text = q.status === 'approved' ? 'הבקשה אושרה: ' + when + car : q.status === 'rejected' ? 'הבקשה נדחתה: ' + when : q.status === 'cancelled' ? 'הנסיעה בוטלה: ' + when : q.status === 'pending' ? 'הנסיעה הוחזרה להמתנה: ' + when : null;
@@ -802,7 +875,7 @@ function maintOf(carId, from, to) {
 function loadBoard() {
   api('board').then(function (r) {
     if (!r.ok) return;
-    if (fresh(r)) { S.board = { requests: r.requests, cars: r.cars, maint: r.maint || [] }; saveC('board', S.board); if (S.view === 'board') renderBoard(); }
+    if (fresh(r)) { S.board = { requests: r.requests, cars: r.cars, maint: r.maint || [] }; S.boardAt = Date.now(); saveC('board', S.board); if (S.view === 'board') renderBoard(); if (S.view === 'new') renderCarPick(); }
   });
 }
 function carById(id) { for (var i = 0; i < S.data.cars.length; i++) if (S.data.cars[i].id === id) return S.data.cars[i]; return null; }
