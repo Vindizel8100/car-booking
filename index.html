@@ -191,7 +191,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <section id="vNew" class="wrap hidden">
   <form id="newForm" class="stack">
     <div id="resubBanner" class="note hidden" style="flex-direction:column;gap:6px"></div>
-    <div id="forBox" class="stack" style="gap:8px">
+    <div id="forBox" class="stack hidden" style="gap:8px">
       <button type="button" class="btn ghost sm" id="forOpen" style="align-self:flex-start;border:1px dashed var(--accent);color:var(--accent)">+ הבקשה עבור עובד אחר</button>
       <div id="forPanel" class="stack hidden" style="gap:8px;background:var(--accent-l);border-radius:12px;padding:12px">
         <div style="display:flex;align-items:center;gap:8px"><b style="flex:1;color:var(--accent-d)">הרכב עבור עובד אחר</b><button type="button" class="btn ghost sm" id="forClose">הסר</button></div>
@@ -388,7 +388,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-26-3';
+var APP_VERSION = '2026-11-26-4';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -471,7 +471,7 @@ $('logoutBtn').addEventListener('click', logout);
 function start() {
   show($('vLogin'), false); show($('topBar'), true); show($('loading'), false);
   if (S.role === 'admin') { if (!S.data) S.data = loadC('admin'); }
-  else { if (!S.peers) S.peers = loadC('peers'); if (!S.mine) S.mine = loadC('mine'); if (!S.board) S.board = loadC('board'); if (!S.ntf) S.ntf = loadC('ntf'); }
+  else { if (!S.peers) S.peers = loadC('peers'); show($('forBox'), !!S.peers); if (!S.mine) S.mine = loadC('mine'); if (!S.board) S.board = loadC('board'); if (!S.ntf) S.ntf = loadC('ntf'); }
   $('hello').textContent = 'שלום, ' + S.name;
   var tabs = S.role === 'admin'
     ? [['board', 'לוח וממתינים'], ['req', 'רשימת בקשות'], ['report', 'דוח חודשי'], ['hist', 'היסטוריה'], ['users', 'עובדים'], ['cars', 'רכבים']]
@@ -513,7 +513,7 @@ document.addEventListener('click', function (e) {
   e.preventDefault(); endResubmit();
   ['nDest', 'nProj', 'nNotes', 'nFrom', 'nTo'].forEach(function (id) { $(id).value = ''; }); clearDays(); initNew();
 });
-function endResubmit() { S.resubmit = null; show($('resubBanner'), false); show($('forBox'), true); $('nBtn').textContent = 'שלח בקשה'; }
+function endResubmit() { S.resubmit = null; show($('resubBanner'), false); show($('forBox'), !!S.peers); $('nBtn').textContent = 'שלח בקשה'; }
 /* בקשה עבור עובד אחר */
 function forName() { return $('forPanel').classList.contains('hidden') ? '' : $('nFor').value; }
 function forLabel() { if (!S.resubmit) $('nBtn').textContent = forName() ? 'שלח בקשה עבור ' + forName() : 'שלח בקשה'; }
@@ -619,7 +619,7 @@ function loadMine() {
   if (!S.mine) $('mineList').innerHTML = '<div class="center"><span class="spin"></span></div>';
   api('myRequests').then(function (r) {
     if (!r.ok) { if (!S.mine) $('mineList').innerHTML = '<div class="msg err">' + esc(r.message) + '</div>'; return; }
-    if (r.users) { S.peers = r.users; saveC('peers', S.peers); if (!$('forPanel').classList.contains('hidden')) fillFor(); }
+    if (r.users) { S.peers = r.users; saveC('peers', S.peers); if (!S.resubmit) show($('forBox'), true); if (!$('forPanel').classList.contains('hidden')) fillFor(); }
     if (fresh(r)) { S.mine = { requests: r.requests, cars: r.cars }; saveC('mine', S.mine); renderMine(); checkNotices(S.mine.requests); }
   });
 }
