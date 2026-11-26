@@ -380,7 +380,7 @@ table.t th{color:var(--muted);font-weight:500;border-top:none}
 <div id="loading" class="center"><span class="spin"></span></div>
 
 <script>
-var APP_VERSION = '2026-11-26-1';
+var APP_VERSION = '2026-11-26-2';
 var API = 'https://script.google.com/macros/s/AKfycbxx1JL_72prP_jSFRQzfS3mdFycX1QDMK7Udg58ApQ7if3GptH0eQyUbRFwSElW9VU/exec';
 var S = { editUser: null, token: null, name: '', role: '', view: '', data: null, week: 0, mine: null };
 var $ = function (id) { return document.getElementById(id); };
@@ -410,8 +410,13 @@ function api(action, body) {
 }
 /* מקבלים נתונים רק אם הם חדשים יותר ממה שכבר מוצג */
 function fresh(r) { if (!r._seq || r._seq < appliedSeq) return false; appliedSeq = r._seq; return true; }
-function applyAdmin(r) { if (r && r.data && fresh(r)) { S.data = r.data; renderAdmin(); } }
-function applyMine(r) { if (r && r.mine) { if (fresh(r)) { S.mine = r.mine; renderMine(); checkNotices(S.mine.requests); } } else loadMine(); }
+function applyAdmin(r) { if (r && r.data && fresh(r)) { S.data = r.data; saveC('admin', S.data); renderAdmin(); } }
+function applyMine(r) { if (r && r.mine) { if (fresh(r)) { S.mine = r.mine; saveC('mine', S.mine); renderMine(); checkNotices(S.mine.requests); } } else loadMine(); }
+/* זיכרון מקומי של הנתונים האחרונים: המסך מוצג מיד בפתיחה, והעדכון מהשרת מגיע ברקע */
+function cKey(k) { return 'cb_c_' + k + '_' + S.name; }
+function saveC(k, v) { try { (S.remember ? localStorage : sessionStorage).setItem(cKey(k), JSON.stringify({ t: Date.now(), v: v })); } catch (e) {} }
+function loadC(k) { try { var o = JSON.parse(localStorage.getItem(cKey(k)) || sessionStorage.getItem(cKey(k)) || 'null'); return o && Date.now() - o.t < 14 * 86400000 ? o.v : null; } catch (e) { return null; } }
+function clearC() { try { [localStorage, sessionStorage].forEach(function (st) { Object.keys(st).forEach(function (k) { if (k.indexOf('cb_c_') === 0) st.removeItem(k); }); }); } catch (e) {} }
 
 function msg(el, text, good) {
   if (!text) { show(el, false); return; }
@@ -448,6 +453,7 @@ function logout() {
   var oldToken = S.token;
   getSub().then(function (s) { if (s && oldToken) fetch(API, { method: 'POST', body: JSON.stringify({ action: 'pushUnsubscribe', endpoint: s.endpoint, token: oldToken }) }).catch(function () {}); });
   tokenForSW(null); show($('pushBar'), false);
+  clearC(); S.data = null; S.mine = null; S.board = null;
   S.token = null; S.ntf = null; store('cb_token', null); store('cb_name', null); store('cb_role', null);
   ['topBar', 'vNew', 'vMine', 'vKm', 'vAdmin', 'vBoard', 'loading'].forEach(function (id) { show($(id), false); });
   show($('vLogin'), true);
@@ -456,6 +462,8 @@ $('logoutBtn').addEventListener('click', logout);
 
 function start() {
   show($('vLogin'), false); show($('topBar'), true); show($('loading'), false);
+  if (S.role === 'admin') { if (!S.data) S.data = loadC('admin'); }
+  else { if (!S.mine) S.mine = loadC('mine'); if (!S.board) S.board = loadC('board'); if (!S.ntf) S.ntf = loadC('ntf'); }
   $('hello').textContent = 'שלום, ' + S.name;
   var tabs = S.role === 'admin'
     ? [['board', 'לוח וממתינים'], ['req', 'רשימת בקשות'], ['report', 'דוח חודשי'], ['hist', 'היסטוריה'], ['users', 'עובדים'], ['cars', 'רכבים']]
@@ -464,7 +472,7 @@ function start() {
   var qv = (location.search.match(/[?&]view=(\w+)/) || [])[1];
   var allowed = S.role === 'admin' ? ['req', 'board', 'report', 'hist', 'users', 'cars'] : ['new', 'mine', 'ntf', 'board', 'km'];
   go(allowed.indexOf(qv) >= 0 ? qv : (S.role === 'admin' ? 'board' : 'new'));
-  if (S.role !== 'admin') { loadMine(); if (qv !== 'ntf') loadNtf(); }
+  if (S.role !== 'admin') { if (S.mine && S.view === 'mine') renderMine(); if (S.ntf) ntfBadge(); loadMine(); if (qv !== 'ntf') loadNtf(); }
   pushAfterLogin();
 }
 $('tabs').addEventListener('click', function (e) { var v = e.target.getAttribute('data-v'); if (v) go(v); });
@@ -587,7 +595,7 @@ function loadMine() {
   if (!S.mine) $('mineList').innerHTML = '<div class="center"><span class="spin"></span></div>';
   api('myRequests').then(function (r) {
     if (!r.ok) { if (!S.mine) $('mineList').innerHTML = '<div class="msg err">' + esc(r.message) + '</div>'; return; }
-    if (fresh(r)) { S.mine = { requests: r.requests, cars: r.cars }; renderMine(); checkNotices(S.mine.requests); }
+    if (fresh(r)) { S.mine = { requests: r.requests, cars: r.cars }; saveC('mine', S.mine); renderMine(); checkNotices(S.mine.requests); }
   });
 }
 function dateList(a, b) {
@@ -648,7 +656,7 @@ function loadNtf() {
   if (S.role === 'admin') return;
   api('myNotices').then(function (r) {
     if (!r.ok) { if (S.view === 'ntf' && !S.ntf) $('ntfList').innerHTML = '<div class="msg err">' + esc(r.message) + '</div>'; return; }
-    S.ntf = r.notices || [];
+    S.ntf = r.notices || []; saveC('ntf', S.ntf);
     if (S.view === 'ntf') renderNtf(); else ntfBadge();
   });
 }
@@ -756,7 +764,7 @@ function loadAdmin() {
   if (!S.data) $('pendList').innerHTML = '<div class="center"><span class="spin"></span></div>';
   api('adminData').then(function (r) {
     if (!r.ok) return msg($('aMsg'), r.message);
-    if (fresh(r)) { S.data = { requests: r.requests, cars: r.cars, users: r.users, maint: r.maint || [], carKm: r.carKm || {}, faults: r.faults || [] }; renderAdmin(); }
+    if (fresh(r)) { S.data = { requests: r.requests, cars: r.cars, users: r.users, maint: r.maint || [], carKm: r.carKm || {}, faults: r.faults || [] }; saveC('admin', S.data); renderAdmin(); }
   });
 }
 function src() { return S.role === 'admin' ? S.data : S.board; }
@@ -768,7 +776,7 @@ function maintOf(carId, from, to) {
 function loadBoard() {
   api('board').then(function (r) {
     if (!r.ok) return;
-    if (fresh(r)) { S.board = { requests: r.requests, cars: r.cars, maint: r.maint || [] }; if (S.view === 'board') renderBoard(); }
+    if (fresh(r)) { S.board = { requests: r.requests, cars: r.cars, maint: r.maint || [] }; saveC('board', S.board); if (S.view === 'board') renderBoard(); }
   });
 }
 function carById(id) { for (var i = 0; i < S.data.cars.length; i++) if (S.data.cars[i].id === id) return S.data.cars[i]; return null; }
@@ -1846,6 +1854,14 @@ function checkVersion() {
 setTimeout(checkVersion, 1500);
 setInterval(checkVersion, 60000);
 document.addEventListener('visibilitychange', function () { if (!document.hidden) checkVersion(); });
+/* חזרה לאתר (מעבר בין אפליקציות בטלפון): מרעננים מיד אם עברו 20 שניות */
+var lastFocusLoad = Date.now();
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden || !S.token || Date.now() - lastFocusLoad < 20000) return;
+  lastFocusLoad = Date.now();
+  if (S.role === 'admin') { if (!/INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '') && $('mModal').classList.contains('hidden') && $('tripPanel').classList.contains('hidden')) loadAdmin(); }
+  else { loadMine(); if (S.view === 'board') loadBoard(); }
+});
 
 /* ---- תצוגת תאריכים בפורמט יום/חודש/שנה ---- */
 function fmtDate(v) { if (!v) return ''; var p = v.split('-'); return '\u2066' + p[2] + '/' + p[1] + '/' + p[0] + '\u2069'; }
@@ -1952,6 +1968,14 @@ function pushAfterLogin() {
   S.token = load('cb_token'); S.name = load('cb_name') || ''; S.role = load('cb_role') || '';
   S.remember = true;
   if (!S.token) { show($('loading'), false); show($('vLogin'), true); return; }
+  if (S.name && S.role) {
+    start(); // מציגים מיד, והבדיקה מול השרת רצה במקביל
+    api('me').then(function (r) {
+      if (!r.ok) { if (r.error === 'AUTH') logout(); return; }
+      if (r.role !== S.role || r.name !== S.name) { store('cb_name', r.name); store('cb_role', r.role); location.reload(); }
+    });
+    return;
+  }
   api('me').then(function (r) {
     if (!r.ok) { logout(); return; }
     S.name = r.name; S.role = r.role; start();

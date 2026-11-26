@@ -58,7 +58,7 @@ function doGet() {
 }
 
 function doPost(e) {
-  var out;
+  var out; SH = {}; VALS = {};
   try {
     var req = JSON.parse(e.postData.contents || '{}');
     out = handle(req);
@@ -481,7 +481,8 @@ var ME = null, HIST_QUEUE = [];
 function hist(action, userName, text, reqId) { HIST_QUEUE.push({ action: action, userName: userName || '', text: text, reqId: reqId || '', by: ME ? ME.name : '' }); }
 function flushHistory() {
   var q = HIST_QUEUE; HIST_QUEUE = [];
-  q.forEach(function (h) { appendRow('History', { id: newId(), at: Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd HH:mm:ss'), by: h.by, userName: h.userName, action: h.action, text: h.text, reqId: h.reqId }); });
+  var at = Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd HH:mm:ss');
+  appendRows('History', q.map(function (h) { return { id: newId(), at: at, by: h.by, userName: h.userName, action: h.action, text: h.text, reqId: h.reqId }; }));
 }
 /* מחזיר את היומן, ומשלים פעולות מלפני שהיומן התחיל מתוך טבלת הבקשות */
 function historyData() {
@@ -521,6 +522,13 @@ function resubmitRequest(me, q) {
 var SERVICE_EVERY = 15000, SERVICE_WARN = 500;
 /* הדיווח האחרון של כל רכב: { carId: { km, at, userName } } */
 function lastKmByCar() {
+  var cache = CacheService.getScriptCache(), hit = cache.get('carKm1');
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  var out = lastKmByCarRaw();
+  try { cache.put('carKm1', JSON.stringify(out), 21600); } catch (e) {}
+  return out;
+}
+function lastKmByCarRaw() {
   var out = {};
   readRows('Mileage').forEach(function (m) {
     var km = Number(m.km); if (!km) return;
@@ -656,7 +664,7 @@ function addMaint(me, q) {
 function removeMaint(id) {
   var r = findRow('Maintenance', 'id', id);
   if (!r) return { ok: false, message: 'הטיפול לא נמצא' };
-  sheet('Maintenance').deleteRow(r.row);
+  sheet('Maintenance').deleteRow(r.row); dirty('Maintenance');
   hist('ביטול טיפול', '', carNameOf(r.data.carId) + ' · ' + rangeTxt(r.data.fromDate, r.data.toDate), '');
   return { ok: true };
 }
@@ -751,7 +759,7 @@ function updateUser(me, q) {
     var sh = sheet('Requests'), last = sh.getLastRow();
     if (last >= 2) {
       var rng = sh.getRange(2, 2, last - 1, 1);
-      rng.setValues(rng.getValues().map(function (v) { return [String(v[0]) === old ? name : v[0]]; }));
+      rng.setValues(rng.getValues().map(function (v) { return [String(v[0]) === old ? name : v[0]]; })); dirty('Requests');
     }
   }
   hist('עובדים', name, (name !== old ? 'שם שונה מ"' + old + '" · ' : '') + 'הרשאה: ' + (role === 'admin' ? 'מנהל/מזכירה' : 'עובד') + (pass ? ' · סיסמה הוחלפה' : ''), '');
@@ -765,7 +773,7 @@ function removeUser(me, name) {
   if (normName(name) === me.name) return { ok: false, message: 'אי אפשר למחוק את המשתמש שאיתו אתה מחובר' };
   var r = findRow('Users', 'name', normName(name));
   if (!r) return { ok: false, message: 'העובד לא נמצא' };
-  SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users').deleteRow(r.row);
+  sheet('Users').deleteRow(r.row); dirty('Users');
   hist('עובדים', normName(name), 'העובד נמחק', '');
   return { ok: true };
 }
@@ -800,18 +808,33 @@ function removeCar(id) {
 
 /* ---------- עזרי גיליון ---------- */
 
+/* זיכרון לזמן בקשה אחת: לא קוראים את אותה לשונית פעמיים */
+var SH = {}, VALS = {};
+function dirty(name) { if (name) delete VALS[name]; else VALS = {}; if (name === 'Mileage' || !name) { try { CacheService.getScriptCache().remove('carKm1'); } catch (e) {} } }
+function vals(name) {
+  if (VALS[name]) return VALS[name];
+  var sh = sheet(name), last = sh.getLastRow();
+  VALS[name] = last < 2 ? [] : sh.getRange(2, 1, last - 1, SHEETS[name].length).getValues();
+  return VALS[name];
+}
 function sheet(name) {
+  if (SH[name]) return SH[name];
   var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(name);
   if (!sh) { // לשונית חדשה (למשל טיפולים) נוצרת אוטומטית בפעם הראשונה
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, SHEETS[name].length).setValues([SHEETS[name]]).setFontWeight('bold');
     sh.getRange('A:Z').setNumberFormat('@');
     sh.setFrozenRows(1);
-  } else if (!HDR_OK[name]) { // עמודה חדשה שנוספה בגרסה חדשה – מוסיפים כותרת
-    var cols = SHEETS[name], lc = sh.getLastColumn();
-    if (lc < cols.length) sh.getRange(1, lc + 1, 1, cols.length - lc).setValues([cols.slice(lc)]).setFontWeight('bold').setNumberFormat('@');
+  } else if (!HDR_OK[name]) { // עמודה חדשה שנוספה בגרסה חדשה – מוסיפים כותרת (נבדק פעם ב-6 שעות)
+    var cols = SHEETS[name], ck = 'hdr_' + name + '_' + cols.length, cache = CacheService.getScriptCache();
+    if (!cache.get(ck)) {
+      var lc = sh.getLastColumn();
+      if (lc < cols.length) sh.getRange(1, lc + 1, 1, cols.length - lc).setValues([cols.slice(lc)]).setFontWeight('bold').setNumberFormat('@');
+      cache.put(ck, '1', 21600);
+    }
   }
   HDR_OK[name] = 1;
+  SH[name] = sh;
   return sh;
 }
 var HDR_OK = {};
@@ -844,10 +867,8 @@ function cellStr(v, key) {
 }
 
 function readRows(name) {
-  var sh = sheet(name), cols = SHEETS[name];
-  var last = sh.getLastRow();
-  if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, cols.length).getValues().map(function (row) {
+  var cols = SHEETS[name];
+  return vals(name).map(function (row) {
     var o = {};
     cols.forEach(function (c, i) { o[c] = cellStr(row[i], c); });
     return o;
@@ -855,15 +876,13 @@ function readRows(name) {
 }
 
 function findRow(name, key, value) {
-  var sh = sheet(name), cols = SHEETS[name];
-  var last = sh.getLastRow();
-  if (last < 2) return null;
-  var vals = sh.getRange(2, 1, last - 1, cols.length).getValues();
+  var cols = SHEETS[name], rows = vals(name);
+  if (!rows.length) return null;
   var k = cols.indexOf(key);
-  for (var i = 0; i < vals.length; i++) {
-    if (cellStr(vals[i][k], key) === String(value)) {
+  for (var i = 0; i < rows.length; i++) {
+    if (cellStr(rows[i][k], key) === String(value)) {
       var o = {};
-      cols.forEach(function (c, j) { o[c] = cellStr(vals[i][j], c); });
+      cols.forEach(function (c, j) { o[c] = cellStr(rows[i][j], c); });
       return { row: i + 2, data: o };
     }
   }
@@ -896,21 +915,43 @@ function cleanupMasterRow() {
 
 function appendRow(name, obj) {
   sheet(name).appendRow(SHEETS[name].map(function (c) { return obj[c] === undefined ? '' : String(obj[c]); }));
+  dirty(name);
 }
-
+/* כמה שורות בכתיבה אחת */
+function appendRows(name, objs) {
+  if (!objs.length) return;
+  if (!IN_LOCK) { objs.forEach(function (o) { appendRow(name, o); }); return; } // בלי מנעול: שורה-שורה (בטוח מול כתיבה מקבילה)
+  var sh = sheet(name), cols = SHEETS[name];
+  sh.getRange(sh.getLastRow() + 1, 1, objs.length, cols.length).setValues(objs.map(function (o) { return cols.map(function (c) { return o[c] === undefined ? '' : String(o[c]); }); }));
+  dirty(name);
+}
+/* עדכון שורה בכתיבה אחת (במקום קריאה נפרדת לכל שדה) */
 function updateRow(name, row, patch) {
   var sh = sheet(name), cols = SHEETS[name];
-  Object.keys(patch).forEach(function (k) {
-    var i = cols.indexOf(k);
-    if (i >= 0) sh.getRange(row, i + 1).setValue(String(patch[k]));
-  });
+  var idx = Object.keys(patch).map(function (k) { return cols.indexOf(k); }).filter(function (i) { return i >= 0; });
+  if (!idx.length) return;
+  var lo = Math.min.apply(null, idx), hi = Math.max.apply(null, idx);
+  var cache = VALS[name] && VALS[name][row - 2];
+  var cur = cache ? cache.slice(lo, hi + 1) : sh.getRange(row, lo + 1, 1, hi - lo + 1).getValues()[0];
+  Object.keys(patch).forEach(function (k) { var i = cols.indexOf(k); if (i >= 0) cur[i - lo] = String(patch[k]); });
+  if (idx.length === 1) sh.getRange(row, lo + 1).setValue(cur[0]);
+  else sh.getRange(row, lo + 1, 1, hi - lo + 1).setValues([cur]);
+  if (cache) cur.forEach(function (v, j) { cache[lo + j] = v; });
+  if (name === 'Mileage') dirty('Mileage');
 }
 
 function withLock(fn) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
-  try { return fn(); } finally { lock.releaseLock(); }
+  IN_LOCK = true; VALS = {}; // אחרי שקיבלנו את המנעול קוראים נתונים טריים
+  try {
+    var res = fn();
+    try { flushHistory(); } catch (e3) {}
+    try { flushNotices(); } catch (e2) {}
+    return res;
+  } finally { IN_LOCK = false; lock.releaseLock(); }
 }
+var IN_LOCK = false;
 
 function normName(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
 function clip(s, n) { return String(s || '').trim().slice(0, n); }
@@ -1019,7 +1060,7 @@ function pushSubscribe(me, sub) {
 }
 function pushUnsubscribe(endpoint) {
   var r = findRow('Subscriptions', 'endpoint', endpoint);
-  if (r) sheet('Subscriptions').deleteRow(r.row);
+  if (r) { sheet('Subscriptions').deleteRow(r.row); dirty('Subscriptions'); }
   return { ok: true };
 }
 
@@ -1034,13 +1075,19 @@ function notifyAdmins(text, exceptName) {
 function flushNotices() {
   if (!NOTICE_QUEUE.length) return;
   var q = NOTICE_QUEUE; NOTICE_QUEUE = [];
-  var users = {};
-  q.forEach(function (n) {
-    appendRow('Notices', { id: newId(), userName: n.userName, title: n.title, text: n.text, view: n.view, createdAt: nowStr(), delivered: '' });
-    users[n.userName] = 1;
-  });
+  var users = {}, at = nowStr();
+  appendRows('Notices', q.map(function (n) { users[n.userName] = 1; return { id: newId(), userName: n.userName, title: n.title, text: n.text, view: n.view, createdAt: at, delivered: '' }; }));
   var subs = readRows('Subscriptions').filter(function (s) { return users[s.userName]; });
-  subs.forEach(function (s) { sendPush(s.endpoint); });
+  if (!subs.length) return;
+  /* שליחה במקביל לכל הטלפונים */
+  var reqs = subs.map(function (s) {
+    var aud = s.endpoint.match(/^https:\/\/[^\/]+/)[0];
+    return { url: s.endpoint, method: 'post', payload: '', muteHttpExceptions: true,
+      headers: { Authorization: 'vapid t=' + vapidJwt(aud) + ', k=' + vapidKeys().pub, TTL: '86400', Urgency: 'high' } };
+  });
+  var res = [];
+  try { res = UrlFetchApp.fetchAll(reqs); } catch (e) { subs.forEach(function (s) { sendPush(s.endpoint); }); return; }
+  res.forEach(function (r, i) { var c = r.getResponseCode(); if (c === 404 || c === 410) pushUnsubscribe(subs[i].endpoint); });
 }
 function sendPush(endpoint) {
   try {
@@ -1063,7 +1110,7 @@ function takeNotices(me) {
   for (var i = vals.length - 1; i >= 0 && i >= vals.length - 300; i--) {
     var o = {}; cols.forEach(function (c, j) { o[c] = cellStr(vals[i][j], c); });
     if (o.userName !== me.name) continue;
-    if (!o.delivered) { out.push(o); sh.getRange(i + 2, cols.indexOf('delivered') + 1).setValue(nowStr()); }
+    if (!o.delivered) { out.push(o); sh.getRange(i + 2, cols.indexOf('delivered') + 1).setValue(nowStr()); dirty('Notices'); }
     else if (recent.length < 3 && now - new Date(o.delivered.replace(' ', 'T')).getTime() < 3 * 60000) recent.push(o);
   }
   return { ok: true, notices: (out.length ? out : recent).reverse().map(function (n) { return { id: n.id, title: n.title, text: n.text, view: n.view }; }) };
